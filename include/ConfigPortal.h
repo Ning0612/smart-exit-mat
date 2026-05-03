@@ -205,6 +205,13 @@ private:
       "<label>User ID (lineToId)<input type=\"text\" name=\"line_to\" value=\"" + _escapeHtml(_cfg->lineToId) + "\"></label>\n"
       "</div>\n"
 
+      // ── 天氣提醒 ──
+      "<div class=\"section\"><h2>天氣提醒（OpenWeather）</h2>\n"
+      "<label>API Key<input type=\"password\" name=\"owm_key\" value=\"" + _escapeHtml(_cfg->owmApiKey) + "\"></label>\n"
+      "<label>城市（英文）<input type=\"text\" name=\"owm_city\" value=\"" + _escapeHtml(_cfg->owmCity) + "\" placeholder=\"例如 Taipei、Kaohsiung\"></label>\n"
+      "<small style=\"color:#888;font-size:.8em\">留空 API Key 則停用天氣提醒，城市名稱請使用英文</small>\n"
+      "</div>\n"
+
       // ── 時間 ──
       "<div class=\"section\"><h2>時間</h2>\n"
       "<label>Timezone (POSIX)<input type=\"text\" name=\"tz\" value=\"" + _escapeHtml(_cfg->timezone) + "\"></label>\n"
@@ -307,6 +314,8 @@ private:
       int cd = _server->arg("cooldown").toInt();
       if (cd > 0) _cfg->cooldownMs = (unsigned long)cd;
     }
+    if (_server->hasArg("owm_key"))  _cfg->owmApiKey = _server->arg("owm_key");
+    if (_server->hasArg("owm_city")) _cfg->owmCity   = _server->arg("owm_city");
 
     // 解析多使用者
     int newCount = 0;

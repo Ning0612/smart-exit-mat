@@ -7,7 +7,8 @@ class LineNotifier {
 public:
   bool send(const String& token, const String& toId,
             const String& name, const String& eventType,
-            const String& timestamp, float weightKg) {
+            const String& timestamp, float weightKg,
+            const String& weatherAdvisory = "") {
 
     WiFiClientSecure client;
     client.setInsecure();
@@ -24,6 +25,9 @@ public:
     String text = name + " " + eventType
                 + "\n時間：" + timestamp
                 + "\n偵測重量：" + String(weightKg, 1) + " kg";
+    if (!weatherAdvisory.isEmpty()) {
+      text += "\n\n天氣提醒：\n" + weatherAdvisory;
+    }
 
     String body = "{\"to\":\"" + _escapeJson(toId) + "\","
                   "\"messages\":[{\"type\":\"text\",\"text\":\""

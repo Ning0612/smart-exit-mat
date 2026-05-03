@@ -12,6 +12,7 @@
 #include "StateManager.h"
 #include "TimeManager.h"
 #include "LineNotifier.h"
+#include "WeatherManager.h"
 #include "ConfigPortal.h"
 
 AppConfig    g_cfg;
@@ -23,9 +24,10 @@ ScaleManager  g_scale;
 StepDetector  g_stepDetector;
 UserManager   g_userMgr;
 StateManager  g_stateMgr;
-TimeManager   g_timeMgr;
-LineNotifier  g_lineNotifier;
-ConfigPortal  g_portal;
+TimeManager    g_timeMgr;
+LineNotifier   g_lineNotifier;
+WeatherManager g_weather;
+ConfigPortal   g_portal;
 
 bool g_configMode = false;
 
@@ -86,6 +88,7 @@ void setup() {
       Serial.print("[WiFi] Connected, IP: ");
       Serial.println(WiFi.localIP());
       g_timeMgr.begin(g_cfg.timezone, g_cfg.ntpServer);
+      g_weather.updateIfNeeded(g_cfg.owmApiKey, g_cfg.owmCity);
     } else {
       Serial.println("[WiFi] Failed — entering AP mode");
       g_configMode = true;
@@ -173,13 +176,15 @@ void loop() {
         matched->name.c_str(), eventType.c_str(),
         timestamp.c_str(), eventWeight);
 
+      String advisory = (eventType == "出門了") ? g_weather.advisory() : "";
       g_lineNotifier.send(
         g_cfg.lineChannelAccessToken,
         g_cfg.lineToId,
         matched->name,
         eventType,
         timestamp,
-        eventWeight
+        eventWeight,
+        advisory
       );
 
       g_userMgr.adaptWeight(matched, eventWeight, g_cfg.matchToleranceKg, g_configMgr);
@@ -187,4 +192,8 @@ void loop() {
   }
 
   g_timeMgr.updateDailySync(g_cfg.timezone, g_cfg.ntpServer);
+  // 只有地墊空閒（無人踩踏）時才允許 HTTPS fetch，避免阻塞踩踏事件偵測
+  if (weight < g_cfg.stepOnThresholdKg) {
+    g_weather.updateIfNeeded(g_cfg.owmApiKey, g_cfg.owmCity);
+  }
 }

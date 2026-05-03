@@ -17,6 +17,8 @@ struct AppConfig {
   String lineToId;
   String timezone;
   String ntpServer;
+  String owmApiKey;
+  String owmCity             = "Taipei";
   float  calibrationFactor  = 28853.34f;
   float  stepOnThresholdKg  = 10.0f;
   float  stepOffThresholdKg =  3.0f;
