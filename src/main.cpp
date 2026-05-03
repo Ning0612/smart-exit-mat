@@ -145,7 +145,26 @@ void loop() {
     );
 
     if (matched == nullptr) {
-      Serial.println("[Step] unknown user — no action");
+      Serial.println("[Step] unknown user");
+      if (eventWeight > 20.0f) {
+        static bool          s_unknownSent   = false;
+        static unsigned long s_lastUnknownMs = 0;
+        unsigned long now = millis();
+        if (!s_unknownSent || now - s_lastUnknownMs >= 3UL * 60UL * 1000UL) {
+          s_unknownSent   = true;
+          s_lastUnknownMs = now;
+          String timestamp = g_timeMgr.getCurrentTimeString();
+          Serial.printf("[Step] unknown notify @ %s (%.1f kg)\n", timestamp.c_str(), eventWeight);
+          g_lineNotifier.send(
+            g_cfg.lineChannelAccessToken,
+            g_cfg.lineToId,
+            "未知使用者",
+            "偵測到未登錄的踩踏，請確認",
+            timestamp,
+            eventWeight
+          );
+        }
+      }
     } else {
       String eventType = g_stateMgr.toggle(*matched);
       String timestamp = g_timeMgr.getCurrentTimeString();
