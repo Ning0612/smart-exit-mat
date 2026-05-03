@@ -87,6 +87,13 @@ void setup() {
     if (WiFi.status() == WL_CONNECTED) {
       Serial.print("[WiFi] Connected, IP: ");
       Serial.println(WiFi.localIP());
+      g_portal.beginSTA(g_cfg, g_users, g_userCount, g_configMgr);
+      if (!g_cfg.lineChannelAccessToken.isEmpty() && !g_cfg.lineToId.isEmpty()) {
+        String msg = "智慧地墊已上線\n"
+                     "區網設定頁：http://" + WiFi.localIP().toString() + "\n"
+                     "（需與地墊在同一 WiFi 下）";
+        g_lineNotifier.sendText(g_cfg.lineChannelAccessToken, g_cfg.lineToId, msg);
+      }
       g_timeMgr.begin(g_cfg.timezone, g_cfg.ntpServer);
       g_weather.updateIfNeeded(g_cfg.owmApiKey, g_cfg.owmCity);
     } else {
@@ -101,6 +108,8 @@ void setup() {
 }
 
 void loop() {
+  g_portal.handleClient();
+
   // GPIO0 長按偵測：偵測到 3 秒後提示放開，放開後清空 WiFi 憑證並重啟
   // 等待放開才重啟，確保 bootloader 不會因 GPIO0 LOW 進入 download mode
   if (!g_configMode) {
@@ -118,10 +127,7 @@ void loop() {
     }
   }
 
-  if (g_configMode) {
-    g_portal.handleClient();
-    return;
-  }
+  if (g_configMode) return;
 
   // HX711 未就緒時不更新狀態機，避免 0.0f 被誤判為離開事件
   if (!g_scale.isReady()) {

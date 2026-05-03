@@ -43,13 +43,23 @@ public:
     _dns->start(53, "*", apIP);
 
     _server = new WebServer(80);
-    _server->on("/",     HTTP_GET,  [this]() { _handleRoot(); });
-    _server->on("/scan", HTTP_GET,  [this]() { _handleScan(); });
-    _server->on("/save", HTTP_POST, [this]() { _handleSave(); });
-    _server->onNotFound(            [this]() { _handleRoot(); });
-    _server->begin();
+    _attachRoutes(true);
 
     Serial.println("[Portal] HTTP server started");
+  }
+
+  void beginSTA(AppConfig& cfg, UserProfile* users, int& userCount, ConfigManager& cfgMgr) {
+    if (_server) return;
+    _cfg       = &cfg;
+    _users     = users;
+    _userCount = &userCount;
+    _cfgMgr    = &cfgMgr;
+
+    _server = new WebServer(80);
+    _attachRoutes(false);
+
+    Serial.printf("[Portal] HTTP server started (STA) on http://%s\n",
+                  WiFi.localIP().toString().c_str());
   }
 
   void handleClient() {
@@ -58,6 +68,18 @@ public:
   }
 
 private:
+  void _attachRoutes(bool allowScan) {
+    _server->on("/",     HTTP_GET,  [this]() { _handleRoot(); });
+    if (allowScan) {
+      _server->on("/scan", HTTP_GET, [this]() { _handleScan(); });
+    } else {
+      _server->on("/scan", HTTP_GET, [this]() { _server->send(200, "application/json", "[]"); });
+    }
+    _server->on("/save", HTTP_POST, [this]() { _handleSave(); });
+    _server->onNotFound(           [this]() { _handleRoot(); });
+    _server->begin();
+  }
+
   String _escapeHtml(const String& s) {
     String out;
     out.reserve(s.length() + 8);
