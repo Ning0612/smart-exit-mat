@@ -15,8 +15,8 @@
 #include "ConfigPortal.h"
 
 AppConfig    g_cfg;
-UserProfile  g_users[1];
-int          g_userCount = 1;
+UserProfile  g_users[MAX_USERS];
+int          g_userCount = 0;
 
 ConfigManager g_configMgr;
 ScaleManager  g_scale;
@@ -47,7 +47,7 @@ void setup() {
 
   pinMode(FORCE_CONFIG_PIN, INPUT_PULLUP);
 
-  g_configMgr.load(g_cfg, g_users[0]);
+  g_configMgr.load(g_cfg, g_users, g_userCount);
   g_stateMgr.init(g_configMgr);
   g_scale.begin(g_cfg.calibrationFactor);
 
@@ -93,7 +93,7 @@ void setup() {
   }
 
   if (g_configMode) {
-    g_portal.begin(g_cfg, g_users[0], g_configMgr);
+    g_portal.begin(g_cfg, g_users, g_userCount, g_configMgr);
   }
 }
 

@@ -4,7 +4,7 @@
 
 class ConfigManager {
 public:
-  void load(AppConfig& cfg, UserProfile& user) {
+  void load(AppConfig& cfg, UserProfile* users, int& userCount) {
     Preferences p;
 
     p.begin("cfg", true);
@@ -22,13 +22,23 @@ public:
     p.end();
 
     p.begin("users", true);
-    user.id       = "user1";
-    user.name     = p.getString("user1_name",    "User1");
-    user.weightKg = p.getFloat ("user1_weight",  60.0f);
+    int saved = p.getInt("user_count", 1);  // default 1 for backward compat
+    if (saved < 0) saved = 0;
+    if (saved > MAX_USERS) saved = MAX_USERS;
+    userCount = saved;
+
+    for (int i = 1; i <= userCount; i++) {
+      String pfx = "user" + String(i);
+      users[i-1].id       = String(i);
+      users[i-1].name     = p.getString((pfx + "_name").c_str(),    "User" + String(i));
+      users[i-1].weightKg = p.getFloat ((pfx + "_weight").c_str(),  60.0f);
+    }
     p.end();
 
     p.begin("state", true);
-    user.atHome = p.getBool("user1_home", false);
+    for (int i = 1; i <= userCount; i++) {
+      users[i-1].atHome = p.getBool(("user" + String(i) + "_home").c_str(), false);
+    }
     p.end();
   }
 
@@ -49,18 +59,33 @@ public:
     p.end();
   }
 
+  // user.id must be "1"~"5" (set during load or _handleSave)
   void saveUser(const UserProfile& user) {
+    int idx = user.id.toInt();
+    if (idx < 1 || idx > MAX_USERS) return;
     Preferences p;
     p.begin("users", false);
-    p.putString("user1_name",   user.name);
-    p.putFloat ("user1_weight", user.weightKg);
+    String pfx = "user" + String(idx);
+    p.putString((pfx + "_name").c_str(),   user.name);
+    p.putFloat ((pfx + "_weight").c_str(), user.weightKg);
     p.end();
   }
 
   void saveUserState(const UserProfile& user) {
+    int idx = user.id.toInt();
+    if (idx < 1 || idx > MAX_USERS) return;
     Preferences p;
     p.begin("state", false);
-    p.putBool("user1_home", user.atHome);
+    p.putBool(("user" + String(idx) + "_home").c_str(), user.atHome);
+    p.end();
+  }
+
+  void saveUserCount(int count) {
+    if (count < 0) count = 0;
+    if (count > MAX_USERS) count = MAX_USERS;
+    Preferences p;
+    p.begin("users", false);
+    p.putInt("user_count", count);
     p.end();
   }
 };

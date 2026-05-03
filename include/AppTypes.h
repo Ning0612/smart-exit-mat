@@ -1,6 +1,8 @@
 #pragma once
 #include <Arduino.h>
 
+constexpr int MAX_USERS = 10;
+
 struct UserProfile {
   String id;
   String name;

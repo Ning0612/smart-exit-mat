@@ -10,26 +10,27 @@ class ConfigPortal {
   WebServer*     _server     = nullptr;
   DNSServer*     _dns        = nullptr;
   ConfigManager* _cfgMgr     = nullptr;
-  UserProfile*   _user       = nullptr;
+  UserProfile*   _users      = nullptr;
+  int*           _userCount  = nullptr;
   AppConfig*     _cfg        = nullptr;
   unsigned long  _lastScanMs = 0;
   static const unsigned long SCAN_COOLDOWN_MS = 5000UL;
 
 public:
-  void begin(AppConfig& cfg, UserProfile& user, ConfigManager& cfgMgr) {
-    _cfg    = &cfg;
-    _user   = &user;
-    _cfgMgr = &cfgMgr;
+  void begin(AppConfig& cfg, UserProfile* users, int& userCount, ConfigManager& cfgMgr) {
+    _cfg       = &cfg;
+    _users     = users;
+    _userCount = &userCount;
+    _cfgMgr    = &cfgMgr;
 
     IPAddress apIP(192, 168, 4, 1);
     IPAddress subnet(255, 255, 255, 0);
-    // 清除先前可能殘留的 STA 連線狀態，再切換到 AP_STA
     WiFi.disconnect(true);
     delay(100);
     WiFi.mode(WIFI_AP_STA);
     WiFi.softAPConfig(apIP, apIP, subnet);
     bool apOk = WiFi.softAP("SmartExitMat-Setup");
-    delay(200);  // 等待 AP 就緒
+    delay(200);
 
     if (apOk) {
       Serial.printf("[Portal] AP started — SSID: SmartExitMat-Setup  IP: %s\n",
@@ -57,7 +58,6 @@ public:
   }
 
 private:
-  // HTML attribute escape：防止 value="..." 被注入
   String _escapeHtml(const String& s) {
     String out;
     out.reserve(s.length() + 8);
@@ -72,7 +72,6 @@ private:
     return out;
   }
 
-  // JSON string escape（用於 /scan 回應中的 SSID，含控制字元 0x00-0x1F）
   String _escapeJson(const String& s) {
     String out;
     out.reserve(s.length() + 8);
@@ -93,9 +92,7 @@ private:
     return out;
   }
 
-  // 掃描 Wi-Fi 並回傳 JSON 陣列（由使用者主動觸發，阻塞約 2-3 秒）
   void _handleScan() {
-    // 5 秒 cooldown 防止重複掃描持續佔用 radio
     if (millis() - _lastScanMs < SCAN_COOLDOWN_MS) {
       _server->send(200, "application/json", "[]");
       return;
@@ -105,7 +102,6 @@ private:
     int n = WiFi.scanNetworks();
     if (n < 0) n = 0;
 
-    // 去重複，最多 20 筆；scanNetworks 已依 RSSI 由強到弱排序
     String ssids[20];
     int count = 0;
     for (int i = 0; i < n && count < 20; i++) {
@@ -130,8 +126,27 @@ private:
   }
 
   void _handleRoot() {
-    String atHomeChecked = _user->atHome ? " checked" : "";
-    String currentSsid   = _escapeHtml(_cfg->wifiSsid);
+    String currentSsid = _escapeHtml(_cfg->wifiSsid);
+
+    // Build user cards
+    String usersHtml;
+    for (int i = 0; i < *_userCount; i++) {
+      int    n   = i + 1;
+      String pfx = "user" + String(n);
+      String chk = _users[i].atHome ? " checked" : "";
+      usersHtml +=
+        "<div class=\"user-card\">"
+        "<div class=\"user-hdr\"><b>使用者 " + String(n) + "</b>"
+        "<button type=\"button\" class=\"del-btn\" "
+        "onclick=\"this.closest('.user-card').remove()\">✕</button></div>\n"
+        "<label>姓名<input type=\"text\" name=\"" + pfx + "_name\" value=\""
+          + _escapeHtml(_users[i].name) + "\"></label>\n"
+        "<label>體重 (kg)<input type=\"number\" step=\"0.1\" name=\""
+          + pfx + "_weight\" value=\"" + String(_users[i].weightKg, 1) + "\"></label>\n"
+        "<label><input type=\"checkbox\" name=\"" + pfx + "_home\" value=\"1\""
+          + chk + "> 目前在家</label>\n"
+        "</div>\n";
+    }
 
     String html =
       "<!DOCTYPE html>\n"
@@ -157,11 +172,20 @@ private:
       ".scan-btn{padding:8px 12px;background:#2196f3;color:#fff;border:none;"
         "border-radius:4px;cursor:pointer;white-space:nowrap;font-size:.9em}\n"
       ".scan-btn:disabled{background:#90caf9;cursor:default}\n"
+      ".user-card{border:1px solid #ddd;border-radius:4px;padding:10px;margin-bottom:8px}\n"
+      ".user-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}\n"
+      ".user-hdr b{font-size:.95em;color:#333}\n"
+      ".del-btn{padding:4px 10px;background:#e53935;color:#fff;border:none;"
+        "border-radius:3px;cursor:pointer;font-size:.8em}\n"
+      ".del-btn:hover{background:#b71c1c}\n"
+      ".add-btn{margin-top:8px;padding:8px 16px;background:#ff9800;color:#fff;"
+        "border:none;border-radius:4px;cursor:pointer;font-size:.9em}\n"
+      ".add-btn:hover{background:#e65100}\n"
       "</style></head><body>\n"
       "<h1>SmartExitMat Setup</h1>\n"
       "<form method=\"POST\" action=\"/save\">\n"
 
-      // ── Wi-Fi（含掃描）──
+      // ── Wi-Fi ──
       "<div class=\"section\"><h2>Wi-Fi</h2>\n"
       "<label>SSID\n"
       "<div class=\"scan-row\">\n"
@@ -187,11 +211,13 @@ private:
       "<label>NTP Server<input type=\"text\" name=\"ntp\" value=\"" + _escapeHtml(_cfg->ntpServer) + "\"></label>\n"
       "</div>\n"
 
-      // ── 使用者 ──
-      "<div class=\"section\"><h2>使用者 1</h2>\n"
-      "<label>姓名<input type=\"text\" name=\"user1_name\" value=\"" + _escapeHtml(_user->name) + "\"></label>\n"
-      "<label>體重 (kg)<input type=\"number\" step=\"0.1\" name=\"user1_weight\" value=\"" + String(_user->weightKg, 1) + "\"></label>\n"
-      "<label><input type=\"checkbox\" name=\"user1_home\" value=\"1\"" + atHomeChecked + "> 目前在家</label>\n"
+      // ── 使用者（動態） ──
+      "<div class=\"section\"><h2>使用者管理</h2>\n"
+      "<div id=\"users_wrap\">\n"
+      + usersHtml +
+      "</div>\n"
+      "<button type=\"button\" class=\"add-btn\" onclick=\"addUser()\">+ 新增使用者</button>\n"
+      "<input type=\"hidden\" name=\"user_count\" id=\"user_count\" value=\"" + String(*_userCount) + "\">\n"
       "</div>\n"
 
       // ── 秤設定 ──
@@ -206,8 +232,10 @@ private:
       "<input type=\"submit\" value=\"儲存並重啟\">\n"
       "</form>\n"
 
-      // ── 掃描 JS ──
       "<script>\n"
+      "var _nextIdx=" + String(*_userCount + 1) + ";\n"
+
+      // 掃描 Wi-Fi
       "function doScan(){\n"
       "  var btn=document.getElementById('scan_btn');\n"
       "  var sel=document.getElementById('ssid_sel');\n"
@@ -228,6 +256,36 @@ private:
       "    btn.disabled=false;btn.textContent='掃描 Wi-Fi';\n"
       "  });\n"
       "}\n"
+
+      // 新增使用者
+      "function addUser(){\n"
+      "  var cards=document.querySelectorAll('.user-card');\n"
+      "  if(cards.length>=5){alert('最多 5 位使用者');return;}\n"
+      "  var idx=_nextIdx++;\n"
+      "  var d=document.createElement('div');\n"
+      "  d.className='user-card';\n"
+      "  var tpl='<div class=\"user-hdr\"><b>使用者 #</b>'\n"
+      "    +'<button type=\"button\" class=\"del-btn\">✕</button></div>'\n"
+      "    +'<label>姓名<input type=\"text\" name=\"userIDX_name\" placeholder=\"輸入姓名\"></label>'\n"
+      "    +'<label>體重 (kg)<input type=\"number\" step=\"0.1\" name=\"userIDX_weight\" value=\"60.0\"></label>'\n"
+      "    +'<label><input type=\"checkbox\" name=\"userIDX_home\" value=\"1\"> 目前在家</label>';\n"
+      "  d.innerHTML=tpl.replace(/IDX/g,idx);\n"
+      "  d.querySelector('.del-btn').onclick=function(){this.closest('.user-card').remove();};\n"
+      "  document.getElementById('users_wrap').appendChild(d);\n"
+      "}\n"
+
+      // 送出前重新編號，確保 user1_xxx ... userN_xxx 連續
+      "document.querySelector('form').addEventListener('submit',function(){\n"
+      "  document.querySelectorAll('.user-card').forEach(function(card,i){\n"
+      "    var n=i+1;\n"
+      "    card.querySelectorAll('input').forEach(function(el){\n"
+      "      if(el.name)el.name=el.name.replace(/user\\d+_/,'user'+n+'_');\n"
+      "    });\n"
+      "    var b=card.querySelector('.user-hdr b');\n"
+      "    if(b)b.textContent='使用者 '+n;\n"
+      "  });\n"
+      "  document.getElementById('user_count').value=document.querySelectorAll('.user-card').length;\n"
+      "});\n"
       "</script>\n"
       "</body></html>";
 
@@ -250,13 +308,36 @@ private:
       if (cd > 0) _cfg->cooldownMs = (unsigned long)cd;
     }
 
-    if (_server->hasArg("user1_name"))   _user->name     = _server->arg("user1_name");
-    if (_server->hasArg("user1_weight")) _user->weightKg = _server->arg("user1_weight").toFloat();
-    _user->atHome = _server->hasArg("user1_home");
+    // 解析多使用者
+    int newCount = 0;
+    if (_server->hasArg("user_count")) {
+      newCount = _server->arg("user_count").toInt();
+      if (newCount < 0) newCount = 0;
+      if (newCount > MAX_USERS) newCount = MAX_USERS;
+    }
+    *_userCount = newCount;
+
+    for (int i = 0; i < newCount; i++) {
+      int    n   = i + 1;
+      String pfx = "user" + String(n);
+      _users[i].id = String(n);
+      if (_server->hasArg(pfx + "_name"))
+        _users[i].name = _server->arg(pfx + "_name");
+      if (_server->hasArg(pfx + "_weight"))
+        _users[i].weightKg = _server->arg(pfx + "_weight").toFloat();
+      _users[i].atHome = _server->hasArg(pfx + "_home");
+    }
+    // 清除超出範圍的使用者記憶體
+    for (int i = newCount; i < MAX_USERS; i++) {
+      _users[i] = UserProfile{};
+    }
 
     _cfgMgr->saveConfig(*_cfg);
-    _cfgMgr->saveUser(*_user);
-    _cfgMgr->saveUserState(*_user);
+    _cfgMgr->saveUserCount(newCount);
+    for (int i = 0; i < newCount; i++) {
+      _cfgMgr->saveUser(_users[i]);
+      _cfgMgr->saveUserState(_users[i]);
+    }
 
     _server->send(200, "text/html; charset=utf-8",
       "<!DOCTYPE html><html><body><h2>儲存成功！重新啟動中...</h2></body></html>");
