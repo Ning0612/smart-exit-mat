@@ -15,7 +15,7 @@ struct AppConfig {
   String lineToId;
   String timezone;
   String ntpServer;
-  float  calibrationFactor  = 2280.0f;
+  float  calibrationFactor  = 28853.34f;
   float  stepOnThresholdKg  = 10.0f;
   float  stepOffThresholdKg =  3.0f;
   float  matchToleranceKg   =  3.0f;

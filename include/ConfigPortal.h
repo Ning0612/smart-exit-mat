@@ -28,10 +28,15 @@ public:
     delay(100);
     WiFi.mode(WIFI_AP_STA);
     WiFi.softAPConfig(apIP, apIP, subnet);
-    WiFi.softAP("SmartExitMat-Setup");
+    bool apOk = WiFi.softAP("SmartExitMat-Setup");
+    delay(200);  // 等待 AP 就緒
 
-    Serial.print("[Portal] AP IP: ");
-    Serial.println(WiFi.softAPIP());
+    if (apOk) {
+      Serial.printf("[Portal] AP started — SSID: SmartExitMat-Setup  IP: %s\n",
+                    WiFi.softAPIP().toString().c_str());
+    } else {
+      Serial.println("[Portal] ERROR: softAP() failed — AP may not be visible");
+    }
 
     _dns = new DNSServer();
     _dns->start(53, "*", apIP);
