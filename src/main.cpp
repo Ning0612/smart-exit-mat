@@ -181,6 +181,8 @@ void loop() {
         timestamp,
         eventWeight
       );
+
+      g_userMgr.adaptWeight(matched, eventWeight, g_cfg.matchToleranceKg, g_configMgr);
     }
   }
 
