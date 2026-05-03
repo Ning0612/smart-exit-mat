@@ -14,6 +14,7 @@
 #include "LineNotifier.h"
 #include "WeatherManager.h"
 #include "ConfigPortal.h"
+#include "EventLogger.h"
 
 AppConfig    g_cfg;
 UserProfile  g_users[MAX_USERS];
@@ -28,6 +29,7 @@ TimeManager    g_timeMgr;
 LineNotifier   g_lineNotifier;
 WeatherManager g_weather;
 ConfigPortal   g_portal;
+EventLogger    g_eventLogger;
 
 bool g_configMode = false;
 
@@ -50,6 +52,7 @@ void setup() {
   pinMode(FORCE_CONFIG_PIN, INPUT_PULLUP);
 
   g_configMgr.load(g_cfg, g_users, g_userCount);
+  g_eventLogger.begin();
   g_stateMgr.init(g_configMgr);
   g_scale.begin(g_cfg.calibrationFactor);
 
@@ -88,6 +91,9 @@ void setup() {
       Serial.print("[WiFi] Connected, IP: ");
       Serial.println(WiFi.localIP());
       g_portal.beginSTA(g_cfg, g_users, g_userCount, g_configMgr);
+      g_portal.setWeatherManager(g_weather);
+      g_portal.setEventLogger(g_eventLogger);
+      g_portal.setTimeManager(g_timeMgr);
       if (!g_cfg.lineChannelAccessToken.isEmpty() && !g_cfg.lineToId.isEmpty()) {
         String msg = "智慧地墊已上線\n"
                      "區網設定頁：http://" + WiFi.localIP().toString() + "\n"
@@ -95,6 +101,7 @@ void setup() {
         g_lineNotifier.sendText(g_cfg.lineChannelAccessToken, g_cfg.lineToId, msg);
       }
       g_timeMgr.begin(g_cfg.timezone, g_cfg.ntpServer);
+      g_eventLogger.pruneOldFiles(6);  // runs after NTP so time() is valid
       g_weather.updateIfNeeded(g_cfg.owmApiKey, g_cfg.owmCity);
     } else {
       Serial.println("[WiFi] Failed — entering AP mode");
@@ -104,6 +111,9 @@ void setup() {
 
   if (g_configMode) {
     g_portal.begin(g_cfg, g_users, g_userCount, g_configMgr);
+    g_portal.setWeatherManager(g_weather);
+    g_portal.setEventLogger(g_eventLogger);
+    g_portal.setTimeManager(g_timeMgr);
   }
 }
 
@@ -176,6 +186,20 @@ void loop() {
       }
     } else {
       String eventType = g_stateMgr.toggle(*matched);
+
+      // Persist event to LittleFS for dashboard reports
+      {
+        EventRecord evRec;
+        evRec.ts     = time(nullptr);
+        evRec.uid    = matched->id;
+        evRec.name   = matched->name;
+        evRec.evType = (eventType == "出門了") ? "out" : "home";
+        evRec.kg     = eventWeight;
+        if (!g_eventLogger.log(evRec)) {
+          Serial.println("[EventLogger] skipped — NTP not synced");
+        }
+      }
+
       String timestamp = g_timeMgr.getCurrentTimeString();
 
       Serial.printf("[State] %s %s @ %s (%.1f kg)\n",

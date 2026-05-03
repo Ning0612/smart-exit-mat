@@ -10,6 +10,8 @@ class WeatherManager {
   bool          _hasRainAdvisory = false;
   unsigned long _lastFetchMs     = 0;
   bool          _lastOk          = false;
+  float         _tempC           = NAN;
+  float         _feelsLikeC      = NAN;
 
   static const unsigned long REFRESH_MS = 30UL * 60UL * 1000UL;
   static const unsigned long RETRY_MS   =  5UL * 60UL * 1000UL;
@@ -24,12 +26,17 @@ public:
     _lastFetchMs = millis();
   }
 
-  const String& advisory() const { return _advisory; }
+  const String& advisory()    const { return _advisory; }
+  float         temperature() const { return _tempC; }
+  float         feelsLike()   const { return _feelsLikeC; }
+  bool          hasData()     const { return _lastOk && !isnan(_tempC); }
 
 private:
   bool _fetch(const String& apiKey, const String& city) {
     _advisory        = "";
     _hasRainAdvisory = false;
+    _tempC           = NAN;
+    _feelsLikeC      = NAN;
     bool ok          = false;
     String cityEnc   = _urlEncode(city);
 
@@ -84,6 +91,8 @@ private:
   }
 
   void _buildCurrentAdvisory(int id, float temp, float feelsLike) {
+    _tempC      = temp;
+    _feelsLikeC = feelsLike;
     if (id >= 200 && id < 300) {
       _add("正在打雷閃電，請注意安全");
       _hasRainAdvisory = true;

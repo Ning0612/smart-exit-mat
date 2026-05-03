@@ -10,6 +10,14 @@ struct UserProfile {
   bool   atHome;
 };
 
+struct EventRecord {
+  time_t ts;       // Unix timestamp
+  String uid;      // "1"~"10"
+  String name;
+  String evType;   // "out" | "home"
+  float  kg;
+};
+
 struct AppConfig {
   String wifiSsid;
   String wifiPassword;

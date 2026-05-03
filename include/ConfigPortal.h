@@ -5,6 +5,9 @@
 #include <DNSServer.h>
 #include "AppTypes.h"
 #include "ConfigManager.h"
+#include "WeatherManager.h"
+#include "EventLogger.h"
+#include "TimeManager.h"
 
 class ConfigPortal {
   WebServer*     _server     = nullptr;
@@ -15,6 +18,9 @@ class ConfigPortal {
   AppConfig*     _cfg        = nullptr;
   unsigned long  _lastScanMs = 0;
   static const unsigned long SCAN_COOLDOWN_MS = 5000UL;
+  WeatherManager* _weather     = nullptr;
+  EventLogger*    _eventLogger = nullptr;
+  TimeManager*    _timeMgr     = nullptr;
 
 public:
   void begin(AppConfig& cfg, UserProfile* users, int& userCount, ConfigManager& cfgMgr) {
@@ -67,6 +73,10 @@ public:
     if (_server) _server->handleClient();
   }
 
+  void setWeatherManager(WeatherManager& wm) { _weather     = &wm; }
+  void setEventLogger   (EventLogger&    el) { _eventLogger = &el; }
+  void setTimeManager   (TimeManager&    tm) { _timeMgr     = &tm; }
+
 private:
   void _attachRoutes(bool allowScan) {
     _server->on("/",     HTTP_GET,  [this]() { _handleRoot(); });
@@ -75,8 +85,11 @@ private:
     } else {
       _server->on("/scan", HTTP_GET, [this]() { _server->send(200, "application/json", "[]"); });
     }
-    _server->on("/save", HTTP_POST, [this]() { _handleSave(); });
-    _server->onNotFound(           [this]() { _handleRoot(); });
+    _server->on("/save",       HTTP_POST, [this]() { _handleSave(); });
+    _server->on("/dashboard",  HTTP_GET,  [this]() { _handleDashboard(); });
+    _server->on("/api/status", HTTP_GET,  [this]() { _handleApiStatus(); });
+    _server->on("/api/events", HTTP_GET,  [this]() { _handleApiEvents(); });
+    _server->onNotFound(               [this]() { _handleRoot(); });
     _server->begin();
   }
 
@@ -205,6 +218,9 @@ private:
       ".add-btn:hover{background:#e65100}\n"
       "</style></head><body>\n"
       "<h1>SmartExitMat Setup</h1>\n"
+      "<a href=\"/dashboard\" style=\"display:inline-block;margin-bottom:12px;"
+        "padding:8px 16px;background:#7c4dff;color:#fff;border-radius:4px;"
+        "text-decoration:none;font-size:.9em\">Dashboard &#x5100;&#x8868;&#x677F;</a>\n"
       "<form method=\"POST\" action=\"/save\">\n"
 
       // ── Wi-Fi ──
@@ -319,6 +335,191 @@ private:
       "</body></html>";
 
     _server->send(200, "text/html; charset=utf-8", html);
+  }
+
+  void _handleDashboard() {
+    static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SmartExitMat Dashboard</title>
+<style>
+:root{--bg:#f5f5f5;--card:#fff;--blue:#2196f3;--green:#4caf50;--red:#f44336;--purple:#7c4dff}
+*{box-sizing:border-box}
+body{font-family:sans-serif;max-width:520px;margin:20px auto;padding:0 16px;background:var(--bg)}
+a.nl{display:inline-block;margin-bottom:12px;padding:8px 16px;background:var(--purple);color:#fff;border-radius:4px;text-decoration:none;font-size:.9em}
+h1{font-size:1.3em;color:#333;margin:0 0 12px}
+.card{background:var(--card);border-radius:8px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+.card h2{font-size:1em;margin:0 0 10px;color:#444}
+.wt{font-size:2.2em;font-weight:700;color:#333}
+.wc{font-size:.85em;color:#888;margin-bottom:4px}
+.wa{font-size:.9em;color:#555;white-space:pre-line;margin-top:8px;min-height:1em}
+.ug{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.ub{padding:10px 12px;border-radius:6px;text-align:center;font-size:.9em;font-weight:500}
+.ub.h{background:#e8f5e9;border:2px solid #4caf50;color:#2e7d32}
+.ub.o{background:#fce4ec;border:2px solid #f44336;color:#c62828}
+.sb{font-size:.75em;color:#aaa;text-align:right;margin-top:8px}
+.tabs{display:flex;gap:4px;margin-bottom:10px}
+.tab{flex:1;padding:8px;border:none;border-radius:4px;cursor:pointer;background:#e0e0e0;font-size:.9em}
+.tab.a{background:var(--blue);color:#fff}
+.nr{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.nb{padding:6px 14px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer}
+.nl2{flex:1;text-align:center;font-weight:500;font-size:.95em}
+table{width:100%;border-collapse:collapse;font-size:.85em}
+th,td{padding:8px 6px;text-align:left;border-bottom:1px solid #eee}
+th{background:#f8f8f8;font-weight:600;color:#555}
+.eo{color:var(--red);font-weight:500}
+.eh{color:var(--green);font-weight:500}
+.nd{text-align:center;color:#aaa;padding:16px}
+</style>
+</head>
+<body>
+<a class="nl" href="/">&#9881; 設定頁</a>
+<h1>SmartExitMat Dashboard</h1>
+<div class="card">
+<h2>即時天氣</h2>
+<div class="wc" id="wc"></div>
+<div class="wt" id="wt">--</div>
+<div class="wa" id="wa">載入中...</div>
+</div>
+<div class="card">
+<h2>在家狀態</h2>
+<div class="ug" id="ug"><div class="nd">載入中...</div></div>
+<div class="sb" id="sb">--</div>
+</div>
+<div class="card">
+<h2>事件報表</h2>
+<div class="tabs">
+<button class="tab a" onclick="sv('day')">日報表</button>
+<button class="tab" onclick="sv('week')">週報表</button>
+<button class="tab" onclick="sv('month')">月報表</button>
+</div>
+<div class="nr">
+<button class="nb" onclick="nav(-1)">&#8592;</button>
+<div class="nl2" id="nl">--</div>
+<button class="nb" onclick="nav(1)">&#8594;</button>
+</div>
+<table>
+<thead><tr><th>時間</th><th>使用者</th><th>事件</th><th>重量</th></tr></thead>
+<tbody id="eb"></tbody>
+</table>
+</div>
+<script>
+var cv='day',rd=new Date();
+function p2(n){return n<10?'0'+n:''+n}
+function ds(d){return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())}
+function ft(ts){var d=new Date(ts*1000);return p2(d.getMonth()+1)+'/'+p2(d.getDate())+' '+p2(d.getHours())+':'+p2(d.getMinutes())}
+function mon(d){var c=new Date(d),dy=c.getDay()||7;c.setDate(c.getDate()-dy+1);return c}
+function ul(){
+var s='';
+if(cv==='day'){s=ds(rd);}
+else if(cv==='week'){var m=mon(rd),e=new Date(m);e.setDate(m.getDate()+6);s=ds(m)+'~'+ds(e);}
+else{s=rd.getFullYear()+'年'+(rd.getMonth()+1)+'月';}
+document.getElementById('nl').textContent=s;
+}
+function sv(v){cv=v;rd=new Date();document.querySelectorAll('.tab').forEach(function(b,i){b.classList.toggle('a',['day','week','month'][i]===v)});ul();le();}
+function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function nav(d){
+if(cv==='day')rd.setDate(rd.getDate()+d);
+else if(cv==='week')rd.setDate(rd.getDate()+d*7);
+else rd.setMonth(rd.getMonth()+d);
+ul();le();
+}
+function ls(){
+fetch('/api/status').then(function(r){return r.json();}).then(function(d){
+var w=d.weather||{};
+document.getElementById('wt').textContent=w.has_data?(w.temp_c.toFixed(1)+'°C'):'--';
+document.getElementById('wc').textContent=w.city||'';
+document.getElementById('wa').textContent=w.has_data?(w.advisory||'天氣正常'):'天氣資料未取得';
+var ug=document.getElementById('ug');
+var us=d.users||[];
+if(!us.length){ug.innerHTML='<div class="nd">尚未設定使用者</div>';return;}
+ug.innerHTML='';
+us.forEach(function(u){var div=document.createElement('div');div.className='ub '+(u.at_home?'h':'o');div.innerHTML='<div>'+esc(u.name)+'</div><div style="font-size:.8em;margin-top:3px">'+(u.at_home?'在家':'外出')+'</div>';ug.appendChild(div);});
+document.getElementById('sb').textContent='更新：'+(d.time||'--');
+}).catch(function(){document.getElementById('wa').textContent='無法連線至裝置';});}
+function le(){
+var url='/api/events?view='+cv;
+if(cv==='day')url+='&date='+ds(rd);
+else if(cv==='week')url+='&date='+ds(mon(rd));
+else url+='&year='+rd.getFullYear()+'&month='+(rd.getMonth()+1);
+fetch(url).then(function(r){return r.json();}).then(function(d){
+var tb=document.getElementById('eb'),evs=d.events||[];
+if(!evs.length){tb.innerHTML='<tr><td colspan="4" class="nd">此期間無紀錄</td></tr>';return;}
+tb.innerHTML='';
+evs.forEach(function(ev){var tr=document.createElement('tr');var io=ev.ev==='out';tr.innerHTML='<td>'+ft(ev.ts)+'</td><td>'+esc(ev.nm)+'</td><td class="'+(io?'eo':'eh')+'">'+(io?'出門':'回家')+'</td><td>'+ev.kg.toFixed(1)+' kg</td>';tb.appendChild(tr);});
+}).catch(function(){document.getElementById('eb').innerHTML='<tr><td colspan="4" style="color:#f44336;text-align:center">載入失敗</td></tr>';});}
+ls();ul();le();
+setInterval(ls,30000);
+</script>
+</body>
+</html>)rawliteral";
+    _server->send_P(200, "text/html; charset=utf-8", DASHBOARD_HTML);
+  }
+
+  void _handleApiStatus() {
+    String json = "{\"weather\":{";
+    if (_weather && _weather->hasData()) {
+      char tbuf[10];
+      snprintf(tbuf, sizeof(tbuf), "%.1f", _weather->temperature());
+      json += "\"has_data\":true,\"temp_c\":";
+      json += tbuf;
+      snprintf(tbuf, sizeof(tbuf), "%.1f", _weather->feelsLike());
+      json += ",\"feels_like_c\":";
+      json += tbuf;
+      json += ",\"advisory\":\"";
+      json += _escapeJson(_weather->advisory());
+      json += "\",\"city\":\"";
+      json += _cfg ? _escapeJson(_cfg->owmCity) : "";
+      json += "\"";
+    } else {
+      json += "\"has_data\":false";
+    }
+    json += "},\"users\":[";
+    int cnt = _userCount ? *_userCount : 0;
+    for (int i = 0; i < cnt; i++) {
+      if (i > 0) json += ",";
+      json += "{\"id\":\"";
+      json += _users[i].id;
+      json += "\",\"name\":\"";
+      json += _escapeJson(_users[i].name);
+      json += "\",\"at_home\":";
+      json += _users[i].atHome ? "true" : "false";
+      json += "}";
+    }
+    String t = _timeMgr ? _timeMgr->getCurrentTimeString() : String("");
+    json += "],\"time\":\"";
+    json += _escapeJson(t);
+    json += "\"}";
+    _server->send(200, "application/json", json);
+  }
+
+  void _handleApiEvents() {
+    if (!_eventLogger) {
+      _server->send(503, "application/json", "{\"error\":\"logger not ready\"}");
+      return;
+    }
+    String view  = _server->hasArg("view")  ? _server->arg("view")  : "day";
+    if (view != "day" && view != "week" && view != "month") view = "day";
+    String date  = _server->hasArg("date")  ? _server->arg("date")  : "";
+    int    year  = _server->hasArg("year")  ? _server->arg("year").toInt()  : 0;
+    int    month = _server->hasArg("month") ? _server->arg("month").toInt() : 0;
+    // Derive year/month from date string when not supplied
+    if ((year == 0 || month == 0) && date.length() >= 7) {
+      year  = date.substring(0, 4).toInt();
+      month = date.substring(5, 7).toInt();
+    }
+    // Final fallback to current time
+    if (year == 0 || month == 0) {
+      time_t now = time(nullptr);
+      struct tm t;
+      localtime_r(&now, &t);
+      year  = t.tm_year + 1900;
+      month = t.tm_mon + 1;
+    }
+    String json = _eventLogger->getEventsJson(year, month, view, date);
+    _server->send(200, "application/json", json);
   }
 
   void _handleSave() {
