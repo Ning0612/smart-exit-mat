@@ -223,8 +223,8 @@ private:
 
       // ── LINE Bot ──
       "<div class=\"section\"><h2>LINE Bot</h2>\n"
-      "<label>Channel Access Token<input type=\"text\" name=\"line_token\" value=\"" + _escapeHtml(_cfg->lineChannelAccessToken) + "\"></label>\n"
-      "<label>User ID (lineToId)<input type=\"text\" name=\"line_to\" value=\"" + _escapeHtml(_cfg->lineToId) + "\"></label>\n"
+      "<label>Channel Access Token<input type=\"password\" name=\"line_token\" value=\"" + _escapeHtml(_cfg->lineChannelAccessToken) + "\"></label>\n"
+      "<label>User ID (lineToId)<input type=\"password\" name=\"line_to\" value=\"" + _escapeHtml(_cfg->lineToId) + "\"></label>\n"
       "</div>\n"
 
       // ── 天氣提醒 ──
