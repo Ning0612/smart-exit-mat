@@ -168,6 +168,18 @@ void loop() {
     if (matched == nullptr) {
       Serial.println("[Step] unknown user");
       if (eventWeight > 20.0f) {
+        // Log every unknown step (rate limiting only applies to LINE notification)
+        {
+          EventRecord evRec;
+          evRec.ts     = time(nullptr);
+          evRec.uid    = "0";
+          evRec.name   = "Unknown";
+          evRec.evType = "unknown";
+          evRec.kg     = eventWeight;
+          if (!g_eventLogger.log(evRec)) {
+            Serial.println("[EventLogger] unknown skipped — NTP not synced");
+          }
+        }
         static bool          s_unknownSent   = false;
         static unsigned long s_lastUnknownMs = 0;
         unsigned long now = millis();

@@ -91,8 +91,9 @@ private:
     _server->on("/save",       HTTP_POST, [this]() { _handleSave(); });
     _server->on("/dashboard",  HTTP_GET,  [this]() { _handleDashboard(); });
     _server->on("/api/status", HTTP_GET,  [this]() { _handleApiStatus(); });
-    _server->on("/api/events",     HTTP_GET,  [this]() { _handleApiEvents(); });
-    _server->on("/api/calibrate",  HTTP_GET,  [this]() { _handleApiCalibrate(); });
+    _server->on("/api/events",        HTTP_GET,  [this]() { _handleApiEvents(); });
+    _server->on("/api/events/status", HTTP_GET,  [this]() { _handleApiEventsStatus(); });
+    _server->on("/api/calibrate",     HTTP_GET,  [this]() { _handleApiCalibrate(); });
     _server->onNotFound(               [this]() { _handleRoot(); });
     _server->begin();
   }
@@ -395,6 +396,9 @@ h1{font-size:1.3em;color:#333;margin:0 0 12px}
 .tabs{display:flex;gap:4px;margin-bottom:10px}
 .tab{flex:1;padding:8px;border:none;border-radius:4px;cursor:pointer;background:#e0e0e0;font-size:.9em}
 .tab.a{background:var(--blue);color:#fff}
+.tv{display:flex;gap:6px;margin-bottom:10px}
+.tvb{flex:1;padding:7px;border:1px solid #ccc;border-radius:4px;cursor:pointer;background:#fff;font-size:.85em;text-align:center}
+.tvb.a{background:var(--blue);color:#fff;border-color:var(--blue)}
 .nr{display:flex;gap:8px;align-items:center;margin-bottom:10px}
 .nb{padding:6px 14px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer}
 .nl2{flex:1;text-align:center;font-weight:500;font-size:.95em}
@@ -404,6 +408,13 @@ th{background:#f8f8f8;font-weight:600;color:#555}
 .eo{color:var(--red);font-weight:500}
 .eh{color:var(--green);font-weight:500}
 .nd{text-align:center;color:#aaa;padding:16px}
+#cw{display:none;height:220px;position:relative}
+#ce{display:none;position:absolute;top:0;left:0;right:0;bottom:0;align-items:center;justify-content:center;font-size:.9em;text-align:center;padding:16px}
+.eu{color:#ff9800;font-weight:500}
+.sc-ctrl{display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.sc-ctrl input{flex:1;min-width:160px;padding:6px;border:1px solid #ccc;border-radius:4px;font-size:.85em}
+#sw{height:200px;position:relative}
+#se{display:none;position:absolute;top:0;left:0;right:0;bottom:0;align-items:center;justify-content:center;font-size:.9em;text-align:center;padding:16px}
 </style>
 </head>
 <body>
@@ -427,18 +438,35 @@ th{background:#f8f8f8;font-weight:600;color:#555}
 <button class="tab" onclick="sv('week')">週報表</button>
 <button class="tab" onclick="sv('month')">月報表</button>
 </div>
+<div class="tv">
+<button class="tvb a" id="bt" onclick="gv('table')">表格</button>
+<button class="tvb" id="bc" onclick="gv('chart')">折線圖</button>
+</div>
 <div class="nr">
 <button class="nb" onclick="nav(-1)">&#8592;</button>
 <div class="nl2" id="nl">--</div>
 <button class="nb" onclick="nav(1)">&#8594;</button>
 </div>
+<div id="tw">
 <table>
 <thead><tr><th>時間</th><th>使用者</th><th>事件</th><th>重量</th></tr></thead>
 <tbody id="eb"></tbody>
 </table>
 </div>
+<div id="cw"><div id="ce"></div><canvas id="ec"></canvas></div>
+</div>
+<div class="card">
+<h2>狀態時間軸</h2>
+<div class="sc-ctrl">
+<input type="datetime-local" id="stdt">
+<button class="nb" onclick="aptSt()">套用</button>
+<button class="nb" onclick="rstSt()">最近 12 小時</button>
+</div>
+<div id="sw"><div id="se"></div><canvas id="sc"></canvas></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-var cv='day',rd=new Date();
+var cv='day',rd=new Date(),vm='table',ch=null,lev=[],fseq=0;
 function p2(n){return n<10?'0'+n:''+n}
 function ds(d){return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())}
 function ft(ts){var d=new Date(ts*1000);return p2(d.getMonth()+1)+'/'+p2(d.getDate())+' '+p2(d.getHours())+':'+p2(d.getMinutes())}
@@ -458,6 +486,73 @@ else if(cv==='week')rd.setDate(rd.getDate()+d*7);
 else rd.setMonth(rd.getMonth()+d);
 ul();le();
 }
+function gv(v){
+vm=v;
+document.getElementById('bt').classList.toggle('a',v==='table');
+document.getElementById('bc').classList.toggle('a',v==='chart');
+document.getElementById('tw').style.display=v==='table'?'':'none';
+document.getElementById('cw').style.display=v==='chart'?'block':'none';
+if(v==='chart')rc(lev);
+}
+function bcd(evs){
+var o={},h={};
+if(cv==='day'){
+for(var i=0;i<24;i++){o[i]=0;h[i]=0;}
+evs.forEach(function(e){var hr=new Date(e.ts*1000).getHours();if(e.ev==='out')o[hr]++;else if(e.ev==='home')h[hr]++;});
+var lb=[],od=[],hd=[];
+for(var i=0;i<24;i++){lb.push(p2(i)+':00');od.push(o[i]);hd.push(h[i]);}
+return{lb:lb,od:od,hd:hd};
+}else if(cv==='week'){
+var mo=mon(rd);mo.setHours(0,0,0,0);
+for(var i=0;i<7;i++){o[i]=0;h[i]=0;}
+evs.forEach(function(e){
+var d=new Date(e.ts*1000);d.setHours(0,0,0,0);
+var df=Math.round((d-mo)/86400000);
+if(df>=0&&df<7){if(e.ev==='out')o[df]++;else if(e.ev==='home')h[df]++;}
+});
+var od=[],hd=[];
+for(var i=0;i<7;i++){od.push(o[i]);hd.push(h[i]);}
+return{lb:['週一','週二','週三','週四','週五','週六','週日'],od:od,hd:hd};
+}else{
+var days=new Date(rd.getFullYear(),rd.getMonth()+1,0).getDate();
+for(var i=1;i<=days;i++){o[i]=0;h[i]=0;}
+evs.forEach(function(e){
+var d=new Date(e.ts*1000);
+if(d.getFullYear()===rd.getFullYear()&&d.getMonth()===rd.getMonth()){
+var dy=d.getDate();if(e.ev==='out')o[dy]++;else if(e.ev==='home')h[dy]++;
+}
+});
+var lb=[],od=[],hd=[];
+for(var i=1;i<=days;i++){lb.push(i+'');od.push(o[i]);hd.push(h[i]);}
+return{lb:lb,od:od,hd:hd};
+}
+}
+function rc(evs){
+var ce=document.getElementById('ce');
+ce.style.display='none';
+if(typeof Chart==='undefined'){
+ce.style.display='flex';ce.style.color='#888';ce.textContent='圖表功能需要網際網路連線';
+return;
+}
+if(ch){ch.destroy();ch=null;}
+var cd=bcd(evs);
+var ctx=document.getElementById('ec').getContext('2d');
+ch=new Chart(ctx,{
+type:'line',
+data:{
+labels:cd.lb,
+datasets:[
+{label:'出門',data:cd.od,borderColor:'#f44336',backgroundColor:'rgba(244,67,54,.1)',tension:.3,fill:true,pointRadius:3},
+{label:'回家',data:cd.hd,borderColor:'#4caf50',backgroundColor:'rgba(76,175,80,.1)',tension:.3,fill:true,pointRadius:3}
+]
+},
+options:{
+responsive:true,maintainAspectRatio:false,
+plugins:{legend:{position:'top'}},
+scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}
+}
+});
+}
 function ls(){
 fetch('/api/status').then(function(r){return r.json();}).then(function(d){
 var w=d.weather||{};
@@ -472,17 +567,78 @@ us.forEach(function(u){var div=document.createElement('div');div.className='ub '
 document.getElementById('sb').textContent='更新：'+(d.time||'--');
 }).catch(function(){document.getElementById('wa').textContent='無法連線至裝置';});}
 function le(){
+var seq=++fseq;
 var url='/api/events?view='+cv;
 if(cv==='day')url+='&date='+ds(rd);
 else if(cv==='week')url+='&date='+ds(mon(rd));
 else url+='&year='+rd.getFullYear()+'&month='+(rd.getMonth()+1);
 fetch(url).then(function(r){return r.json();}).then(function(d){
-var tb=document.getElementById('eb'),evs=d.events||[];
-if(!evs.length){tb.innerHTML='<tr><td colspan="4" class="nd">此期間無紀錄</td></tr>';return;}
+if(seq!==fseq)return;
+lev=d.events||[];
+var tb=document.getElementById('eb');
+if(!lev.length){tb.innerHTML='<tr><td colspan="4" class="nd">此期間無紀錄</td></tr>';}
+else{
 tb.innerHTML='';
-evs.forEach(function(ev){var tr=document.createElement('tr');var io=ev.ev==='out';tr.innerHTML='<td>'+ft(ev.ts)+'</td><td>'+esc(ev.nm)+'</td><td class="'+(io?'eo':'eh')+'">'+(io?'出門':'回家')+'</td><td>'+ev.kg.toFixed(1)+' kg</td>';tb.appendChild(tr);});
-}).catch(function(){document.getElementById('eb').innerHTML='<tr><td colspan="4" style="color:#f44336;text-align:center">載入失敗</td></tr>';});}
-ls();ul();le();
+lev.forEach(function(ev){var tr=document.createElement('tr');var ecl=ev.ev==='out'?'eo':(ev.ev==='home'?'eh':'eu');var etx=ev.ev==='out'?'出門':(ev.ev==='home'?'回家':'偵測');tr.innerHTML='<td>'+ft(ev.ts)+'</td><td>'+esc(ev.nm)+'</td><td class="'+ecl+'">'+etx+'</td><td>'+ev.kg.toFixed(1)+' kg</td>';tb.appendChild(tr);});
+}
+if(vm==='chart')rc(lev);
+}).catch(function(){
+if(seq!==fseq)return;
+document.getElementById('eb').innerHTML='<tr><td colspan="4" style="color:#f44336;text-align:center">載入失敗</td></tr>';
+if(vm==='chart'){var ce=document.getElementById('ce');ce.style.display='flex';ce.style.color='#f44336';ce.textContent='資料載入失敗';}
+});}
+var sch=null,stw=0;
+var SCL=['#2196f3','#ff9800','#9c27b0','#00bcd4','#795548','#e91e63','#ff5722','#607d8b'];
+function tiso(d){return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+'T'+p2(d.getHours())+':'+p2(d.getMinutes())}
+function rstSt(){stw=Math.floor(Date.now()/1000)-43200;document.getElementById('stdt').value=tiso(new Date(stw*1000));lsc();}
+function aptSt(){var v=document.getElementById('stdt').value;if(v)stw=Math.floor(new Date(v).getTime()/1000);lsc();}
+function lsc(){
+fetch('/api/events/status?start='+stw).then(function(r){return r.json();}).then(function(d){rsc(d);}).catch(function(){
+var se=document.getElementById('se');se.style.display='flex';se.style.color='#f44336';se.textContent='狀態資料載入失敗';
+});}
+function rsc(data){
+var se=document.getElementById('se');se.style.display='none';
+if(typeof Chart==='undefined'){se.style.display='flex';se.style.color='#888';se.textContent='圖表功能需要網際網路連線';return;}
+var ws=data.ws,we=data.we,evs=data.events||[];
+var pre=evs.filter(function(e){return e.ts<ws;});
+var win=evs.filter(function(e){return e.ts>=ws&&e.ts<we;});
+var uinit={};
+pre.forEach(function(e){
+if(e.ev==='unknown')return;
+if(!uinit[e.uid])uinit[e.uid]={nm:e.nm,st:null};
+uinit[e.uid].st=e.ev==='home'?1:0;
+});
+// Seed initial states from current device state for users with no recent events
+(data.users||[]).forEach(function(u){
+if(!uinit[u.uid])uinit[u.uid]={nm:u.nm,st:u.home?1:0};
+});
+var umap={};
+win.forEach(function(e){if(e.uid&&e.uid!=='0')umap[e.uid]=e.nm;});
+Object.keys(uinit).forEach(function(uid){if(!umap[uid])umap[uid]=uinit[uid].nm;});
+var ds=[],ci=0;
+Object.keys(umap).sort().forEach(function(uid){
+var col=SCL[ci++%SCL.length];
+var ist=uinit[uid]?uinit[uid].st:null;
+var uevs=win.filter(function(e){return e.uid===uid&&e.ev!=='unknown';}).sort(function(a,b){return a.ts-b.ts;});
+var pts=[],cur=ist;
+if(cur!==null)pts.push({x:ws*1000,y:cur});
+uevs.forEach(function(e){var ns=e.ev==='home'?1:0;pts.push({x:e.ts*1000,y:ns});cur=ns;});
+if(cur!==null)pts.push({x:we*1000,y:cur});
+if(pts.length===0)return;
+ds.push({label:umap[uid],data:pts,borderColor:col,backgroundColor:'transparent',stepped:true,tension:0,pointRadius:4,fill:false,borderWidth:2});
+});
+var unevs=win.filter(function(e){return e.ev==='unknown';});
+if(unevs.length>0){ds.push({label:'Unknown',data:unevs.map(function(e){return{x:e.ts*1000,y:0.5};}),showLine:false,pointRadius:7,pointStyle:'triangle',borderColor:'#9e9e9e',backgroundColor:'#9e9e9e'});}
+if(sch){sch.destroy();sch=null;}
+var ctx=document.getElementById('sc').getContext('2d');
+sch=new Chart(ctx,{type:'line',data:{datasets:ds},options:{responsive:true,maintainAspectRatio:false,parsing:false,
+scales:{
+x:{type:'linear',min:ws*1000,max:we*1000,ticks:{maxTicksLimit:13,callback:function(v){var d=new Date(v);return p2(d.getHours())+':'+p2(d.getMinutes());}}},
+y:{min:-0.15,max:1.15,ticks:{stepSize:0.5,callback:function(v){return v===1?'在家':(v===0?'外出':(v===0.5?'?':null));}}}
+},
+plugins:{legend:{position:'top'},tooltip:{callbacks:{label:function(c){var y=c.parsed.y;var t=new Date(c.parsed.x);return c.dataset.label+': '+(y===1?'在家':(y===0?'外出':'未知'))+'  '+p2(t.getHours())+':'+p2(t.getMinutes());}}}}}
+});}
+ls();ul();le();rstSt();
 setInterval(ls,30000);
 </script>
 </body>
@@ -552,6 +708,54 @@ setInterval(ls,30000);
     }
     String json = _eventLogger->getEventsJson(year, month, view, date);
     _server->send(200, "application/json", json);
+  }
+
+  void _handleApiEventsStatus() {
+    if (!_eventLogger) {
+      _server->send(503, "application/json", "{\"error\":\"logger not ready\"}");
+      return;
+    }
+    time_t now = time(nullptr);
+    time_t windowStart = 0;
+    if (_server->hasArg("start")) {
+      long v = _server->arg("start").toInt();
+      // Accept timestamps in a ±7-day window around now
+      if (v > 0 && v >= (long)now - 7L * 86400L && v <= (long)now + 86400L) {
+        windowStart = (time_t)v;
+      }
+    }
+    if (windowStart <= 0) {
+      windowStart = now - 43200L;
+    }
+    // 24h lookback to reconstruct each user's state at window start,
+    // plus the 12h display window
+    time_t rangeStart = windowStart - 86400L;
+    time_t windowEnd  = windowStart + 43200L;
+
+    String evArr = _eventLogger->getEventsArrayInRange(rangeStart, windowEnd);
+
+    // Include current user states so the front-end can draw lines
+    // for users who haven't stepped in >24h
+    String resp = "{\"ws\":";
+    resp += String((long)windowStart);
+    resp += ",\"we\":";
+    resp += String((long)windowEnd);
+    resp += ",\"users\":[";
+    int cnt = _userCount ? *_userCount : 0;
+    for (int i = 0; i < cnt; i++) {
+      if (i > 0) resp += ",";
+      resp += "{\"uid\":\"";
+      resp += _users[i].id;
+      resp += "\",\"nm\":\"";
+      resp += _escapeJson(_users[i].name);
+      resp += "\",\"home\":";
+      resp += _users[i].atHome ? "true" : "false";
+      resp += "}";
+    }
+    resp += "],\"events\":";
+    resp += evArr;
+    resp += "}";
+    _server->send(200, "application/json", resp);
   }
 
   void _handleApiCalibrate() {

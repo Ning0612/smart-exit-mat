@@ -161,6 +161,34 @@ public:
     return result;
   }
 
+  // Returns events in [ts_start, ts_end) as a JSON array string.
+  // Spans multiple consecutive month files as needed (up to 300 events).
+  String getEventsArrayInRange(time_t ts_start, time_t ts_end) {
+    if (!_ready) return "[]";
+    if (ts_start >= ts_end) return "[]";
+
+    struct tm t_s, t_e;
+    localtime_r(&ts_start, &t_s);
+    time_t ts_last = ts_end - 1;
+    localtime_r(&ts_last, &t_e);
+
+    String result = "[";
+    bool first = true;
+    int count = 0;
+    const int MAX_EVENTS = 300;
+
+    int y = t_s.tm_year + 1900, m = t_s.tm_mon + 1;
+    int yEnd = t_e.tm_year + 1900, mEnd = t_e.tm_mon + 1;
+
+    while (count < MAX_EVENTS && (y < yEnd || (y == yEnd && m <= mEnd))) {
+      count += _readFileInRange(_filePath(y, m), ts_start, ts_end, result, first, MAX_EVENTS - count);
+      if (++m > 12) { m = 1; y++; }
+    }
+
+    result += "]";
+    return result;
+  }
+
   void pruneOldFiles(int keepMonths = 6) {
     if (!_ready) return;
     time_t now = time(nullptr);
