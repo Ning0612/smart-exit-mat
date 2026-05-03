@@ -94,6 +94,7 @@ void setup() {
       g_portal.setWeatherManager(g_weather);
       g_portal.setEventLogger(g_eventLogger);
       g_portal.setTimeManager(g_timeMgr);
+      g_portal.setScaleManager(g_scale);
       if (!g_cfg.lineChannelAccessToken.isEmpty() && !g_cfg.lineToId.isEmpty()) {
         String msg = "智慧地墊已上線\n"
                      "區網設定頁：http://" + WiFi.localIP().toString() + "\n"
@@ -114,6 +115,7 @@ void setup() {
     g_portal.setWeatherManager(g_weather);
     g_portal.setEventLogger(g_eventLogger);
     g_portal.setTimeManager(g_timeMgr);
+    g_portal.setScaleManager(g_scale);
   }
 }
 

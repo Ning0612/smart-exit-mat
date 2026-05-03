@@ -8,6 +8,7 @@
 #include "WeatherManager.h"
 #include "EventLogger.h"
 #include "TimeManager.h"
+#include "ScaleManager.h"
 
 class ConfigPortal {
   WebServer*     _server     = nullptr;
@@ -21,6 +22,7 @@ class ConfigPortal {
   WeatherManager* _weather     = nullptr;
   EventLogger*    _eventLogger = nullptr;
   TimeManager*    _timeMgr     = nullptr;
+  ScaleManager*   _scale       = nullptr;
 
 public:
   void begin(AppConfig& cfg, UserProfile* users, int& userCount, ConfigManager& cfgMgr) {
@@ -76,6 +78,7 @@ public:
   void setWeatherManager(WeatherManager& wm) { _weather     = &wm; }
   void setEventLogger   (EventLogger&    el) { _eventLogger = &el; }
   void setTimeManager   (TimeManager&    tm) { _timeMgr     = &tm; }
+  void setScaleManager  (ScaleManager&   sm) { _scale       = &sm; }
 
 private:
   void _attachRoutes(bool allowScan) {
@@ -88,7 +91,8 @@ private:
     _server->on("/save",       HTTP_POST, [this]() { _handleSave(); });
     _server->on("/dashboard",  HTTP_GET,  [this]() { _handleDashboard(); });
     _server->on("/api/status", HTTP_GET,  [this]() { _handleApiStatus(); });
-    _server->on("/api/events", HTTP_GET,  [this]() { _handleApiEvents(); });
+    _server->on("/api/events",     HTTP_GET,  [this]() { _handleApiEvents(); });
+    _server->on("/api/calibrate",  HTTP_GET,  [this]() { _handleApiCalibrate(); });
     _server->onNotFound(               [this]() { _handleRoot(); });
     _server->begin();
   }
@@ -267,7 +271,14 @@ private:
 
       // ── 秤設定 ──
       "<div class=\"section\"><h2>秤與偵測設定</h2>\n"
-      "<label>Calibration Factor<input type=\"number\" step=\"0.01\" name=\"cal_factor\" value=\"" + String(_cfg->calibrationFactor, 2) + "\"></label>\n"
+      "<label>Calibration Factor<input type=\"number\" step=\"0.01\" name=\"cal_factor\" id=\"cal_factor\" value=\"" + String(_cfg->calibrationFactor, 2) + "\"></label>\n"
+      "<div id=\"cal_box\" style=\"margin-top:8px;padding:10px;background:#e3f2fd;border-radius:4px;display:none\">\n"
+      "<label style=\"margin-top:0\">現在站上地墊的實際重量 (kg)"
+      "<input type=\"number\" step=\"0.1\" id=\"cal_wt\" min=\"5\" max=\"300\" placeholder=\"例如 70.5\"></label>\n"
+      "<button type=\"button\" onclick=\"doCalibrate()\" id=\"cal_btn\" style=\"margin-top:8px;width:100%;padding:8px;background:#1565c0;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.9em\">確認並計算</button>\n"
+      "<div id=\"cal_msg\" style=\"margin-top:6px;font-size:.85em\"></div>\n"
+      "</div>\n"
+      "<button type=\"button\" onclick=\"toggleCal()\" style=\"margin-top:8px;padding:7px 14px;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.85em\">自動計算校正係數</button>\n"
       "<label>踩踏門檻 (kg)<input type=\"number\" step=\"0.1\" name=\"step_on\" value=\"" + String(_cfg->stepOnThresholdKg, 1) + "\"></label>\n"
       "<label>離開門檻 (kg)<input type=\"number\" step=\"0.1\" name=\"step_off\" value=\"" + String(_cfg->stepOffThresholdKg, 1) + "\"></label>\n"
       "<label>比對容差 (kg)<input type=\"number\" step=\"0.1\" name=\"match_tol\" value=\"" + String(_cfg->matchToleranceKg, 1) + "\"></label>\n"
@@ -317,6 +328,27 @@ private:
       "  d.innerHTML=tpl.replace(/IDX/g,idx);\n"
       "  d.querySelector('.del-btn').onclick=function(){this.closest('.user-card').remove();};\n"
       "  document.getElementById('users_wrap').appendChild(d);\n"
+      "}\n"
+
+      // 自動校正係數
+      "function toggleCal(){\n"
+      "  var b=document.getElementById('cal_box');\n"
+      "  b.style.display=b.style.display==='none'?'block':'none';\n"
+      "}\n"
+      "function doCalibrate(){\n"
+      "  var wt=parseFloat(document.getElementById('cal_wt').value);\n"
+      "  var msg=document.getElementById('cal_msg');\n"
+      "  var btn=document.getElementById('cal_btn');\n"
+      "  if(isNaN(wt)||wt<5){msg.style.color='#c62828';msg.textContent='請輸入有效重量（≥ 5 kg）';return;}\n"
+      "  msg.style.color='#555';msg.textContent='讀取感測器中，請站穩...';\n"
+      "  btn.disabled=true;\n"
+      "  fetch('/api/calibrate?w='+wt).then(function(r){return r.json();}).then(function(d){\n"
+      "    if(!d.ok){msg.style.color='#c62828';msg.textContent='錯誤：'+(d.error||'未知');btn.disabled=false;return;}\n"
+      "    document.getElementById('cal_factor').value=d.factor.toFixed(2);\n"
+      "    msg.style.color='#2e7d32';\n"
+      "    msg.textContent='raw='+Math.round(d.raw)+'，新係數='+d.factor.toFixed(2)+'（記得按儲存）';\n"
+      "    btn.disabled=false;\n"
+      "  }).catch(function(){msg.style.color='#c62828';msg.textContent='連線失敗，請重試';btn.disabled=false;});\n"
       "}\n"
 
       // 送出前重新編號，確保 user1_xxx ... userN_xxx 連續
@@ -520,6 +552,42 @@ setInterval(ls,30000);
     }
     String json = _eventLogger->getEventsJson(year, month, view, date);
     _server->send(200, "application/json", json);
+  }
+
+  void _handleApiCalibrate() {
+    if (!_scale) {
+      _server->send(503, "application/json", "{\"ok\":false,\"error\":\"scale not initialized\"}");
+      return;
+    }
+    if (!_server->hasArg("w")) {
+      _server->send(400, "application/json", "{\"ok\":false,\"error\":\"missing param w\"}");
+      return;
+    }
+    float knownWeight = _server->arg("w").toFloat();
+    if (knownWeight < 5.0f) {
+      _server->send(400, "application/json", "{\"ok\":false,\"error\":\"weight must be >= 5 kg\"}");
+      return;
+    }
+    double rawVal = _scale->getRawValue(5);
+    if (rawVal < -10000.0) {
+      char buf[80];
+      snprintf(buf, sizeof(buf), "{\"ok\":false,\"error\":\"wiring reversed? raw=%.0f\"}", rawVal);
+      _server->send(400, "application/json", buf);
+      return;
+    }
+    if (rawVal < 10000.0) {
+      _server->send(400, "application/json",
+        "{\"ok\":false,\"error\":\"no weight detected — please stand on the mat\"}");
+      return;
+    }
+    float factor = (float)(rawVal / knownWeight);
+    if (!isfinite(factor) || factor <= 0.0f) {
+      _server->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid factor\"}");
+      return;
+    }
+    char buf[80];
+    snprintf(buf, sizeof(buf), "{\"ok\":true,\"raw\":%.0f,\"factor\":%.2f}", rawVal, factor);
+    _server->send(200, "application/json", buf);
   }
 
   void _handleSave() {

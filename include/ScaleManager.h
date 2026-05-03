@@ -28,4 +28,8 @@ public:
     float raw = _scale.get_units(samples);
     return (raw < 0.0f) ? 0.0f : raw;
   }
+
+  double getRawValue(int samples = 5) {
+    return _scale.get_value(samples);
+  }
 };
