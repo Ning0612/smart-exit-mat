@@ -11,7 +11,7 @@
   ▼
 初始化 LittleFS、秤（自動 tare）
   │
-  ├─[WiFi SSID 為空]─→ 啟動 AP 模式（SmartExitMat-Setup）
+  ├─[WiFi SSID 為空]─→ 啟動 AP 模式（SmartExitMat-Setup，WPA2 密碼印於 Serial）
   │
   └─[有 SSID]─→ 嘗試連接 WiFi（最多 10 秒）
                    │
@@ -21,7 +21,7 @@
                    │          → 發送上線 LINE 通知
                    │          → 進入主迴圈
                    │
-                   └─[失敗]─→ 啟動 AP 模式
+                   └─[失敗]─→ 啟動 AP 模式（SmartExitMat-Setup，WPA2 密碼印於 Serial）
 ```
 
 ---

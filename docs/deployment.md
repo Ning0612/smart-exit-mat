@@ -58,8 +58,10 @@ pio device monitor
 [Boot] SmartExitMat starting
 [Boot] No WiFi SSID — entering AP mode
 [Scale] tare OK (0.00 kg)
-[ConfigPortal] AP started: 192.168.4.1
+[Portal] AP started — SSID: SmartExitMat-Setup  Password: XXXXXXXX  IP: 192.168.4.1
 ```
+
+> `XXXXXXXX` 為本裝置 MAC 後 4 bytes 大寫 Hex（每台裝置唯一），連接 AP 時需輸入此密碼。
 
 > ⚠️ **警告**：擦除後 NVS 所有資料（WiFi、LINE Token、使用者、在家狀態）全部清空，需重新進入設定頁輸入。
 
@@ -129,4 +131,10 @@ pio run -t erase               # 全片 Flash 擦除
 pio device list                # 列出偵測到的序列裝置
 ```
 
-> **Windows PowerShell 5.1**：`&&` 不支援，需分兩行執行或使用 Git Bash / PowerShell 7+。
+> **Windows PowerShell 5.1**：`&&` 不支援，需分兩行執行或使用 Git Bash / PowerShell 7+。  
+> **Windows pio 路徑**：若 `pio` 未在全域 PATH（Claude Code 工作階段），請使用完整路徑：
+> ```powershell
+> $pio = "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe"
+> & $pio run --target upload
+> & $pio device monitor --baud 115200
+> ```

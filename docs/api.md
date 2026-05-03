@@ -268,25 +268,31 @@ GET /api/calibrate?w=72.5
 
 **欄位（均為選填，不傳的欄位不更新）**：
 
-| 欄位名 | 說明 |
-|--------|------|
-| `wifi_ssid` | WiFi SSID |
-| `wifi_pass` | WiFi 密碼 |
-| `line_token` | LINE Channel Access Token |
-| `line_to` | LINE 接收者 ID |
-| `owm_key` | OWM API Key |
-| `owm_city` | 城市名稱 |
-| `tz` | POSIX 時區字串 |
-| `ntp` | NTP 伺服器 |
-| `cal_factor` | 校正係數（float） |
-| `step_on` | Step On Threshold（float） |
-| `step_off` | Step Off Threshold（float） |
-| `match_tol` | Match Tolerance（float） |
-| `cooldown` | Cooldown（unsigned long，ms） |
-| `user_count` | 使用者總數（int） |
-| `user1_name` | 使用者 1 名稱 |
-| `user1_weight` | 使用者 1 體重（float） |
-| … | （user2–user5 同格式） |
+| 欄位名 | 類型 | 說明 |
+|--------|------|------|
+| `wifi_ssid` | string | WiFi SSID |
+| `wifi_pass` | string | WiFi 密碼；**空值保留現有密碼** |
+| `wifi_pass_clear` | checkbox（值 `"1"`） | 勾選時清除 WiFi 密碼（開放網路用） |
+| `line_token` | string | LINE Channel Access Token；**空值保留現有 Token** |
+| `line_token_clear` | checkbox（值 `"1"`） | 勾選時清除 Token（停用 LINE 通知） |
+| `line_to` | string | LINE 接收者 ID；**空值保留現有值** |
+| `line_to_clear` | checkbox（值 `"1"`） | 勾選時清除 User ID |
+| `owm_key` | string | OWM API Key；**空值保留現有 Key** |
+| `owm_key_clear` | checkbox（值 `"1"`） | 勾選時清除 API Key（停用天氣提醒） |
+| `owm_city` | string | 城市名稱（長度 ≤ 64） |
+| `tz` | string | POSIX 時區字串（長度 ≤ 64） |
+| `ntp` | NTP 伺服器 | hostname（長度 ≤ 128） |
+| `cal_factor` | float | 校正係數，有效範圍 **> 100** |
+| `step_on` | float | Step On Threshold，有效範圍 **1.0–200.0 kg** |
+| `step_off` | float | Step Off Threshold，有效範圍 **0.1–100.0 kg** |
+| `match_tol` | float | Match Tolerance，有效範圍 **0.5–30.0 kg** |
+| `cooldown` | int | Cooldown（ms），有效範圍 **500–30000** |
+| `user_count` | int | 使用者總數（0–10） |
+| `user1_name` | string | 使用者 1 名稱 |
+| `user1_weight` | float | 使用者 1 體重，有效範圍 **5.0–300.0 kg** |
+| … | | （user2–user5 同格式） |
+
+> **機密欄位（`wifi_pass`、`line_token`、`line_to`、`owm_key`）**：空值不更新現有設定；若需清除，需同時傳入對應的 `*_clear=1`。數值欄位超出有效範圍時，忽略該欄位並保留原值。
 
 儲存完成後，裝置自動呼叫 `ESP.restart()` 重啟。
 

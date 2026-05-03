@@ -187,6 +187,8 @@ UserProfile* identify(float weightKg, UserProfile* profiles,
 - 失敗：5 分鐘後重試
 - 僅在地墊閒置（`weight < stepOnThreshold`）時執行，避免阻塞踩踏偵測
 
+**URL 編碼**：`owmCity` 透過 `_urlEncode()` 處理後放入 OWM query string。允許直通字元：`A-Z a-z 0-9 - . _`；空白及其他所有字元均 `%XX` 百分比編碼，防止城市名稱注入額外 query 參數。
+
 天氣建議邏輯（`_buildCurrentAdvisory()`）：
 
 | 條件 | 建議文字 |
@@ -326,4 +328,10 @@ pio run -t erase
 pio device list
 ```
 
-> **Windows PowerShell 5.1**：不支援 `&&` 串聯指令，請改用 PowerShell 7+ 或 Git Bash，或分兩行執行。
+> **Windows PowerShell 5.1**：不支援 `&&` 串聯指令，請改用 PowerShell 7+ 或 Git Bash，或分兩行執行。  
+> **Windows pio 路徑**：若 `pio` 未在全域 PATH（Claude Code 工作階段），請使用完整路徑：
+> ```powershell
+> $pio = "$env:USERPROFILE\.platformio\penv\Scripts\pio.exe"
+> & $pio run          # 編譯驗證
+> & $pio run --target upload
+> ```
