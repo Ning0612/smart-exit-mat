@@ -37,12 +37,16 @@ public:
     delay(100);
     WiFi.mode(WIFI_AP_STA);
     WiFi.softAPConfig(apIP, apIP, subnet);
-    bool apOk = WiFi.softAP("SmartExitMat-Setup");
+    uint8_t mac[6];
+    WiFi.macAddress(mac);
+    char apPass[9];
+    snprintf(apPass, sizeof(apPass), "%02X%02X%02X%02X", mac[2], mac[3], mac[4], mac[5]);
+    bool apOk = WiFi.softAP("SmartExitMat-Setup", apPass);
     delay(200);
 
     if (apOk) {
-      Serial.printf("[Portal] AP started — SSID: SmartExitMat-Setup  IP: %s\n",
-                    WiFi.softAPIP().toString().c_str());
+      Serial.printf("[Portal] AP started — SSID: SmartExitMat-Setup  Password: %s  IP: %s\n",
+                    apPass, WiFi.softAPIP().toString().c_str());
     } else {
       Serial.println("[Portal] ERROR: softAP() failed — AP may not be visible");
     }
@@ -239,18 +243,34 @@ private:
       "</div>\n"
       "<input type=\"text\" name=\"wifi_ssid\" id=\"wifi_ssid\" value=\"" + currentSsid + "\" placeholder=\"或直接輸入 SSID\">\n"
       "</label>\n"
-      "<label>Password<input type=\"password\" name=\"wifi_pass\" value=\"" + _escapeHtml(_cfg->wifiPassword) + "\"></label>\n"
+      "<label>Password<input type=\"password\" name=\"wifi_pass\" placeholder=\""
+        + (_cfg->wifiPassword.isEmpty() ? "尚未設定" : "已設定（留空不變更）")
+        + "\"></label>\n"
+      "<label style=\"margin-top:4px;font-size:.85em;color:#888\">"
+        "<input type=\"checkbox\" name=\"wifi_pass_clear\" value=\"1\"> 清除密碼（連接開放網路）</label>\n"
       "</div>\n"
 
       // ── LINE Bot ──
       "<div class=\"section\"><h2>LINE Bot</h2>\n"
-      "<label>Channel Access Token<input type=\"password\" name=\"line_token\" value=\"" + _escapeHtml(_cfg->lineChannelAccessToken) + "\"></label>\n"
-      "<label>User ID (lineToId)<input type=\"password\" name=\"line_to\" value=\"" + _escapeHtml(_cfg->lineToId) + "\"></label>\n"
+      "<label>Channel Access Token<input type=\"password\" name=\"line_token\" placeholder=\""
+        + (_cfg->lineChannelAccessToken.isEmpty() ? "尚未設定" : "已設定（留空不變更）")
+        + "\"></label>\n"
+      "<label style=\"margin-top:4px;font-size:.85em;color:#888\">"
+        "<input type=\"checkbox\" name=\"line_token_clear\" value=\"1\"> 清除 Token（停用 LINE 通知）</label>\n"
+      "<label>User ID (lineToId)<input type=\"password\" name=\"line_to\" placeholder=\""
+        + (_cfg->lineToId.isEmpty() ? "尚未設定" : "已設定（留空不變更）")
+        + "\"></label>\n"
+      "<label style=\"margin-top:4px;font-size:.85em;color:#888\">"
+        "<input type=\"checkbox\" name=\"line_to_clear\" value=\"1\"> 清除 User ID</label>\n"
       "</div>\n"
 
       // ── 天氣提醒 ──
       "<div class=\"section\"><h2>天氣提醒（OpenWeather）</h2>\n"
-      "<label>API Key<input type=\"password\" name=\"owm_key\" value=\"" + _escapeHtml(_cfg->owmApiKey) + "\"></label>\n"
+      "<label>API Key<input type=\"password\" name=\"owm_key\" placeholder=\""
+        + (_cfg->owmApiKey.isEmpty() ? "尚未設定" : "已設定（留空不變更）")
+        + "\"></label>\n"
+      "<label style=\"margin-top:4px;font-size:.85em;color:#888\">"
+        "<input type=\"checkbox\" name=\"owm_key_clear\" value=\"1\"> 清除 API Key（停用天氣提醒）</label>\n"
       "<label>城市（英文）<input type=\"text\" name=\"owm_city\" value=\"" + _escapeHtml(_cfg->owmCity) + "\" placeholder=\"例如 Taipei、Kaohsiung\"></label>\n"
       "<small style=\"color:#888;font-size:.8em\">留空 API Key 則停用天氣提醒，城市名稱請使用英文</small>\n"
       "</div>\n"
@@ -795,22 +815,62 @@ setInterval(ls,30000);
   }
 
   void _handleSave() {
-    if (_server->hasArg("wifi_ssid"))    _cfg->wifiSsid               = _server->arg("wifi_ssid");
-    if (_server->hasArg("wifi_pass"))    _cfg->wifiPassword            = _server->arg("wifi_pass");
-    if (_server->hasArg("line_token"))   _cfg->lineChannelAccessToken  = _server->arg("line_token");
-    if (_server->hasArg("line_to"))      _cfg->lineToId                = _server->arg("line_to");
-    if (_server->hasArg("tz"))           _cfg->timezone                = _server->arg("tz");
-    if (_server->hasArg("ntp"))          _cfg->ntpServer               = _server->arg("ntp");
-    if (_server->hasArg("cal_factor"))   _cfg->calibrationFactor       = _server->arg("cal_factor").toFloat();
-    if (_server->hasArg("step_on"))      _cfg->stepOnThresholdKg       = _server->arg("step_on").toFloat();
-    if (_server->hasArg("step_off"))     _cfg->stepOffThresholdKg      = _server->arg("step_off").toFloat();
-    if (_server->hasArg("match_tol"))    _cfg->matchToleranceKg        = _server->arg("match_tol").toFloat();
+    if (_server->hasArg("wifi_ssid"))    _cfg->wifiSsid = _server->arg("wifi_ssid");
+    // 機密欄位：留空不變更；勾選 clear checkbox 才清除
+    if (_server->hasArg("wifi_pass_clear")) {
+      _cfg->wifiPassword = "";
+    } else if (_server->hasArg("wifi_pass") && !_server->arg("wifi_pass").isEmpty()) {
+      _cfg->wifiPassword = _server->arg("wifi_pass");
+    }
+    if (_server->hasArg("line_token_clear")) {
+      _cfg->lineChannelAccessToken = "";
+    } else if (_server->hasArg("line_token") && !_server->arg("line_token").isEmpty()) {
+      _cfg->lineChannelAccessToken = _server->arg("line_token");
+    }
+    if (_server->hasArg("line_to_clear")) {
+      _cfg->lineToId = "";
+    } else if (_server->hasArg("line_to") && !_server->arg("line_to").isEmpty()) {
+      _cfg->lineToId = _server->arg("line_to");
+    }
+    if (_server->hasArg("owm_key_clear")) {
+      _cfg->owmApiKey = "";
+    } else if (_server->hasArg("owm_key") && !_server->arg("owm_key").isEmpty()) {
+      _cfg->owmApiKey = _server->arg("owm_key");
+    }
+    // 非機密欄位直接更新，加長度限制
+    if (_server->hasArg("tz")) {
+      String v = _server->arg("tz");
+      if (v.length() <= 64) _cfg->timezone = v;
+    }
+    if (_server->hasArg("ntp")) {
+      String v = _server->arg("ntp");
+      if (v.length() <= 128) _cfg->ntpServer = v;
+    }
+    if (_server->hasArg("owm_city")) {
+      String v = _server->arg("owm_city");
+      if (v.length() <= 64) _cfg->owmCity = v;
+    }
+    // 數值欄位範圍驗證
+    if (_server->hasArg("cal_factor")) {
+      float v = _server->arg("cal_factor").toFloat();
+      if (isfinite(v) && v > 100.0f) _cfg->calibrationFactor = v;
+    }
+    if (_server->hasArg("step_on")) {
+      float v = _server->arg("step_on").toFloat();
+      if (isfinite(v) && v >= 1.0f && v <= 200.0f) _cfg->stepOnThresholdKg = v;
+    }
+    if (_server->hasArg("step_off")) {
+      float v = _server->arg("step_off").toFloat();
+      if (isfinite(v) && v >= 0.1f && v <= 100.0f) _cfg->stepOffThresholdKg = v;
+    }
+    if (_server->hasArg("match_tol")) {
+      float v = _server->arg("match_tol").toFloat();
+      if (isfinite(v) && v >= 0.5f && v <= 30.0f) _cfg->matchToleranceKg = v;
+    }
     if (_server->hasArg("cooldown")) {
       int cd = _server->arg("cooldown").toInt();
-      if (cd > 0) _cfg->cooldownMs = (unsigned long)cd;
+      if (cd >= 500 && cd <= 30000) _cfg->cooldownMs = (unsigned long)cd;
     }
-    if (_server->hasArg("owm_key"))  _cfg->owmApiKey = _server->arg("owm_key");
-    if (_server->hasArg("owm_city")) _cfg->owmCity   = _server->arg("owm_city");
 
     // 解析多使用者
     int newCount = 0;
@@ -827,8 +887,10 @@ setInterval(ls,30000);
       _users[i].id = String(n);
       if (_server->hasArg(pfx + "_name"))
         _users[i].name = _server->arg(pfx + "_name");
-      if (_server->hasArg(pfx + "_weight"))
-        _users[i].weightKg = _server->arg(pfx + "_weight").toFloat();
+      if (_server->hasArg(pfx + "_weight")) {
+        float w = _server->arg(pfx + "_weight").toFloat();
+        if (isfinite(w) && w >= 5.0f && w <= 300.0f) _users[i].weightKg = w;
+      }
       _users[i].atHome = _server->hasArg(pfx + "_home");
     }
     // 清除超出範圍的使用者記憶體

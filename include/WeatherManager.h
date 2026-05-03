@@ -139,14 +139,19 @@ private:
     _advisory += s;
   }
 
-  // 僅對空白做 %20 轉換，城市名稱一般不含其他特殊字元
   String _urlEncode(const String& s) {
     String out;
-    out.reserve(s.length() + 8);
+    out.reserve(s.length() * 3);
     for (unsigned int i = 0; i < s.length(); i++) {
-      char c = s[i];
-      if (c == ' ') out += "%20";
-      else          out += c;
+      unsigned char c = (unsigned char)s[i];
+      if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+          (c >= '0' && c <= '9') || c == '-' || c == '.' || c == '_') {
+        out += (char)c;
+      } else {
+        char buf[4];
+        snprintf(buf, sizeof(buf), "%%%02X", c);
+        out += buf;
+      }
     }
     return out;
   }

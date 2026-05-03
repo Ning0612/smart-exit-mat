@@ -57,12 +57,18 @@ private:
     String out;
     out.reserve(s.length() + 8);
     for (unsigned int i = 0; i < s.length(); i++) {
-      char c = s[i];
+      unsigned char c = (unsigned char)s[i];
       if      (c == '"')  out += "\\\"";
       else if (c == '\\') out += "\\\\";
       else if (c == '\n') out += "\\n";
       else if (c == '\r') out += "\\r";
-      else                out += c;
+      else if (c < 0x20) {
+        char buf[7];
+        snprintf(buf, sizeof(buf), "\\u%04x", c);
+        out += buf;
+      } else {
+        out += (char)c;
+      }
     }
     return out;
   }
