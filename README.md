@@ -52,7 +52,8 @@ pio device monitor        # 確認啟動正常（115200 baud）
 ### 第三步：初始設定
 
 1. 連接 WiFi：**`SmartExitMat-Setup`**，WPA2 密碼：**`12345678`**（預設值，開機時顯示於 Serial）
-2. 開啟瀏覽器：`http://192.168.4.1`
+2. 開啟外部瀏覽器（Chrome、Safari、Edge 等）：`http://192.168.4.1`
+   > LINE App 內建瀏覽器不支援 HTTP Basic Auth 登入彈窗；設定管理員密碼後，請改用外部瀏覽器開啟設定頁。
 3. **先在「安全設定」區塊修改 AP 密碼與管理員密碼**（建議在填入 LINE Token 等敏感資訊前完成）
 4. 填入 WiFi、LINE Token、使用者體重，儲存重啟
 

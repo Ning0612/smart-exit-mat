@@ -201,6 +201,8 @@ atHome=true  → 踩踏 → atHome=false → LINE 通知「出門了」
 （需與地墊在同一 WiFi 下）
 ```
 
+請將 LINE 訊息中的網址複製到 Chrome、Safari、Edge 等外部瀏覽器開啟。若已設定管理員密碼，LINE App 內建瀏覽器不支援 HTTP Basic Auth 登入彈窗，可能無法顯示登入畫面。
+
 方法二：登入路由器後台，在「已連線裝置」或「DHCP 用戶端列表」中尋找名稱為 `ESP32` 的裝置。
 
 方法三：Serial 監控中會顯示：

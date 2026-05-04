@@ -126,6 +126,19 @@ Serial.println(WiFi.macAddress());
 
 ---
 
+### 沒有跳出登入視窗，只顯示網頁無法使用
+
+**症狀**：從 LINE 訊息點開設定頁連結後，沒有出現帳號密碼視窗，頁面顯示「網頁無法使用」或 `net::ERR_HTTP_RESPONSE_CODE_FAILURE`。
+
+**原因**：LINE App 內建瀏覽器不支援本專案使用的 HTTP Basic Auth 登入彈窗。
+
+**解決**：
+- 將設定頁網址複製到 Chrome、Safari、Edge 等外部瀏覽器開啟
+- 確認網址使用 `http://`，不是 `https://`
+- 登入時帳號固定為 `admin`，密碼為設定的管理員密碼
+
+---
+
 ### 忘記管理員密碼
 
 長按 **BOOT 鍵（GPIO0）** 超過 3 秒後**放開**（必須放開才會重啟，持續按住會進入 bootloader download 模式），裝置將清空 WiFi 憑證、AP 密碼（重置為 `12345678`）與管理員密碼（清空）並重啟進入 AP 模式。  
