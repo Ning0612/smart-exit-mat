@@ -24,6 +24,8 @@ class ConfigPortal {
   TimeManager*    _timeMgr     = nullptr;
   ScaleManager*   _scale       = nullptr;
   String          _csrfToken;
+  unsigned long   _clearFailMs    = 0;
+  int             _clearFailCount = 0;
 
 public:
   void begin(AppConfig& cfg, UserProfile* users, int& userCount, ConfigManager& cfgMgr) {
@@ -102,6 +104,8 @@ private:
     _server->on("/api/status", HTTP_GET,  [this]() { _handleApiStatus(); });
     _server->on("/api/events",        HTTP_GET,  [this]() { _handleApiEvents(); });
     _server->on("/api/events/status", HTTP_GET,  [this]() { _handleApiEventsStatus(); });
+    _server->on("/api/events/clear",  HTTP_POST, [this]() { _handleApiEventsClear(); });
+    _server->on("/api/csrf",          HTTP_GET,  [this]() { _handleApiCsrf(); });
     _server->on("/api/calibrate",     HTTP_GET,  [this]() { _handleApiCalibrate(); });
     _server->onNotFound(               [this]() { _handleRoot(); });
     _server->begin();
@@ -541,6 +545,23 @@ th{background:#f8f8f8;font-weight:600;color:#555}
 </div>
 <div id="sw"><div id="se"></div><canvas id="sc"></canvas></div>
 </div>
+<div class="card" style="border:1px solid #f44336">
+<h2 style="color:#f44336;margin:0 0 10px">管理</h2>
+<button onclick="showClearDlg()" style="width:100%;padding:10px;background:#f44336;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.9em;font-weight:500">清除所有事件紀錄</button>
+</div>
+<div id="clr-ov" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center">
+<div style="background:#fff;border-radius:8px;padding:24px;max-width:320px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,.3)">
+<h3 style="margin:0 0 8px;color:#f44336">確認清除</h3>
+<p style="font-size:.9em;color:#555;margin:0 0 12px">此操作將永久刪除所有事件紀錄，無法復原。</p>
+<label style="display:block;font-size:.85em;color:#777;margin-bottom:4px">管理員密碼（未設定則留空）</label>
+<input type="password" id="clr-pw" style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #ccc;border-radius:4px;font-size:.9em">
+<div id="clr-msg" style="font-size:.85em;margin-top:6px;min-height:1.2em"></div>
+<div style="display:flex;gap:8px;margin-top:14px">
+<button id="clr-ok" onclick="doClr()" style="flex:1;padding:10px;background:#f44336;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:500">確認清除</button>
+<button onclick="hideClearDlg()" style="flex:1;padding:10px;background:#e0e0e0;border:none;border-radius:4px;cursor:pointer">取消</button>
+</div>
+</div>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 var cv='day',rd=new Date(),vm='table',ch=null,lev=[],fseq=0;
@@ -715,6 +736,22 @@ y:{min:-0.15,max:1.15,ticks:{stepSize:0.5,callback:function(v){return v===1?'在
 },
 plugins:{legend:{position:'top'},tooltip:{callbacks:{label:function(c){var y=c.parsed.y;var t=new Date(c.parsed.x);return c.dataset.label+': '+(y===1?'在家':(y===0?'外出':'未知'))+'  '+p2(t.getHours())+':'+p2(t.getMinutes());}}}}}
 });}
+function showClearDlg(){document.getElementById('clr-msg').textContent='';document.getElementById('clr-pw').value='';document.getElementById('clr-ov').style.display='flex';}
+function hideClearDlg(){document.getElementById('clr-ov').style.display='none';}
+function doClr(){
+var msg=document.getElementById('clr-msg');
+var btn=document.getElementById('clr-ok');
+msg.textContent='';btn.disabled=true;
+fetch('/api/csrf').then(function(r){return r.json();}).then(function(csrf){
+var fd=new FormData();
+fd.append('_csrf',csrf.token);
+fd.append('password',document.getElementById('clr-pw').value);
+return fetch('/api/events/clear',{method:'POST',body:fd});
+}).then(function(r){return r.json();}).then(function(d){
+if(d.ok){msg.style.color='#2e7d32';msg.textContent='清除成功！';setTimeout(function(){hideClearDlg();lev=[];if(vm==='chart'&&ch){ch.destroy();ch=null;}le();},1500);}
+else{msg.style.color='#f44336';msg.textContent=d.error||'清除失敗';}
+btn.disabled=false;
+}).catch(function(){msg.style.color='#f44336';msg.textContent='連線失敗，請重試';btn.disabled=false;});}
 ls();ul();le();rstSt();
 setInterval(ls,30000);
 </script>
@@ -874,6 +911,43 @@ setInterval(ls,30000);
     char buf[80];
     snprintf(buf, sizeof(buf), "{\"ok\":true,\"raw\":%.0f,\"factor\":%.2f}", rawVal, factor);
     _server->send(200, "application/json", buf);
+  }
+
+  void _handleApiCsrf() {
+    if (!_checkAuth()) return;
+    _server->send(200, "application/json", "{\"token\":\"" + _csrfToken + "\"}");
+  }
+
+  void _handleApiEventsClear() {
+    if (!_checkAuth()) return;
+    if (!_checkCsrf()) return;
+    if (_cfg && !_cfg->adminPassword.isEmpty()) {
+      // Rate limit: 5 failures → 30s cooldown
+      unsigned long now = millis();
+      if (_clearFailCount >= 5 && (now - _clearFailMs) < 30000UL) {
+        _server->send(429, "application/json",
+          "{\"ok\":false,\"error\":\"too many attempts, wait 30s\"}");
+        return;
+      }
+      String pw = _server->hasArg("password") ? _server->arg("password") : "";
+      if (pw.isEmpty() || pw.length() > 128 || pw != _cfg->adminPassword) {
+        _clearFailCount++;
+        _clearFailMs = millis();
+        Serial.println("[Portal] clear rejected: wrong password");
+        _server->send(403, "application/json",
+          "{\"ok\":false,\"error\":\"\\u5bc6\\u78bc\\u932f\\u8aa4\"}");
+        return;
+      }
+      _clearFailCount = 0;
+    }
+    if (!_eventLogger) {
+      _server->send(503, "application/json",
+        "{\"ok\":false,\"error\":\"logger not ready\"}");
+      return;
+    }
+    _eventLogger->clearAll();
+    Serial.println("[Portal] event log cleared by admin");
+    _server->send(200, "application/json", "{\"ok\":true}");
   }
 
   void _handleSave() {

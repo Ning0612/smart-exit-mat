@@ -189,6 +189,39 @@ public:
     return result;
   }
 
+  bool clearAll() {
+    if (!_ready) return false;
+    File dir = LittleFS.open("/events");
+    if (!dir || !dir.isDirectory()) return true;
+
+    String toDel[50];
+    int cnt = 0;
+    File f = dir.openNextFile();
+    while (f && cnt < 50) {
+      String fullPath = String(f.name());
+      f.close();
+      int slash = fullPath.lastIndexOf('/');
+      String fname = (slash >= 0) ? fullPath.substring(slash + 1) : fullPath;
+      // Only delete files matching YYYY-MM.jsonl format (same guard as pruneOldFiles)
+      if (fname.length() >= 12 && fname.endsWith(".jsonl")) {
+        int y = fname.substring(0, 4).toInt();
+        int m = fname.substring(5, 7).toInt();
+        if (y > 1970 && m >= 1 && m <= 12) {
+          toDel[cnt++] = fullPath.startsWith("/") ? fullPath : "/events/" + fname;
+        }
+      }
+      f = dir.openNextFile();
+    }
+    dir.close();
+
+    for (int i = 0; i < cnt; i++) {
+      LittleFS.remove(toDel[i]);
+      Serial.printf("[EventLogger] removed %s\n", toDel[i].c_str());
+    }
+    Serial.println("[EventLogger] clearAll done");
+    return true;
+  }
+
   void pruneOldFiles(int keepMonths = 6) {
     if (!_ready) return;
     time_t now = time(nullptr);
