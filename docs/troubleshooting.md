@@ -114,6 +114,25 @@ Serial.println(WiFi.macAddress());
 
 ---
 
+## Web UI 認證問題
+
+### 瀏覽器一直要求輸入帳號密碼
+
+**原因**：設定頁已設定管理員密碼，啟用了 HTTP Basic Auth。
+
+**解決**：
+- 帳號固定為 `admin`，密碼為設定頁「安全設定」中設定的管理員密碼
+- 若忘記密碼：長按 GPIO0 3 秒觸發硬體重置，裝置重啟後管理密碼清空，可重新設定
+
+---
+
+### 忘記管理員密碼
+
+長按 **BOOT 鍵（GPIO0）** 超過 3 秒後**放開**（必須放開才會重啟，持續按住會進入 bootloader download 模式），裝置將清空 WiFi 憑證、AP 密碼（重置為 `12345678`）與管理員密碼（清空）並重啟進入 AP 模式。  
+重新透過 AP 模式設定頁輸入新的管理員密碼即可。
+
+---
+
 ## LINE 通知問題
 
 ### 沒有收到任何 LINE 通知
@@ -290,3 +309,53 @@ pio run --target upload
 **原因**：`advisory()` 可能回傳空字串（天氣良好、溫度適中、無降雨預報）
 
 這是正常行為，不代表天氣功能故障。只有符合特定條件（雨、極端溫度、降雨預報）才會附加建議。
+
+---
+
+## TLS / HTTPS 問題
+
+### Serial 顯示 `-9984`（X509 憑證驗證失敗）
+
+**症狀**：
+```
+[LINE] HTTP error -1
+```
+搭配 mbedTLS 輸出 `-9984 MBEDTLS_ERR_X509_CERT_VERIFY_FAILED`
+
+**原因**：`RootCerts.h` 中的根 CA 與服務商實際使用的憑證鏈不符。
+
+**診斷**（在可連網的電腦上執行）：
+```bash
+# 取出鏈中最後一張憑證（root CA）並顯示 SHA-1 指紋
+openssl s_client -connect api.line.me:443 -servername api.line.me -showcerts 2>/dev/null \
+  | awk 'BEGIN{c=""} /-----BEGIN CERTIFICATE-----/{c=""} {c=c"\n"$0} /-----END CERTIFICATE-----/{last=c} END{print last}' \
+  | openssl x509 -noout -fingerprint -sha1
+
+openssl s_client -connect api.openweathermap.org:443 -servername api.openweathermap.org -showcerts 2>/dev/null \
+  | awk 'BEGIN{c=""} /-----BEGIN CERTIFICATE-----/{c=""} {c=c"\n"$0} /-----END CERTIFICATE-----/{last=c} END{print last}' \
+  | openssl x509 -noout -fingerprint -sha1
+```
+
+比對輸出的 SHA-1 指紋與 `include/RootCerts.h` 中的註解值：
+- `LINE_ROOT_CA`：DigiCert Global Root G2（SHA-1：`DF:3C:24:F9:...`）+ DigiCert Global Root G3
+- `OWM_ROOT_CA`：USERTrust RSA Certification Authority（SHA-1：`2B:8F:1B:57:...`）
+
+若指紋不符，服務商已更換憑證鏈，需更新 `RootCerts.h` 中的 PEM 並重新燒錄。
+
+---
+
+### Serial 顯示 `-15074`（ASN1 解析失敗）
+
+**症狀**：mbedTLS 輸出 `-15074 MBEDTLS_ERR_PK_INVALID_ALG`
+
+**原因**：`RootCerts.h` 中的 PEM 資料損毀或格式錯誤（非合法 DER 編碼的 X.509 憑證）。
+
+**解決**：從官方或可信來源重新取得根 CA PEM，確認 Base64 內容完整，並重新燒錄。
+
+---
+
+### NTP 同步前 TLS 無法驗證
+
+TLS 憑證驗證需要正確的系統時間。若 NTP 同步尚未完成，mbedTLS 可能因憑證時間驗證失敗而拒絕連線。
+
+`main.cpp` 已確保 `g_timeMgr.begin()`（NTP）在 LINE 通知之前完成，正常情況下不會發生此問題。若自行擴充功能，請遵守相同順序。

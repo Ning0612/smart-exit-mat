@@ -6,7 +6,7 @@
 
 首次燒錄或清空 WiFi 憑證後，裝置因無 SSID 可連，自動啟動 AP 熱點：
 
-1. 手機或電腦搜尋 WiFi → 選擇 **`SmartExitMat-Setup`**，輸入 WPA2 密碼（8 碼大寫 Hex，由裝置 MAC 唯一衍生，開機時顯示於 Serial：`[Portal] AP started — ... Password: XXXXXXXX`）
+1. 手機或電腦搜尋 WiFi → 選擇 **`SmartExitMat-Setup`**，輸入 WPA2 密碼（**預設 `12345678`**；可在設定頁「安全設定」區塊修改，開機時顯示於 Serial：`[Portal] AP started — ... Password: XXXXXXXX`）
 2. 瀏覽器開啟：`http://192.168.4.1`
 
 ### 後續設定（STA 模式）
@@ -222,3 +222,81 @@ NTP 同步策略：
 4. 連線成功後發送上線 LINE 通知
 
 > **機密欄位說明**：WiFi 密碼、LINE Token、LINE User ID、OWM API Key 等欄位採「留空不變更」設計，不回顯現有值。若需清除，請勾選欄位旁的「清除」checkbox 再儲存。數值欄位（校正係數、門檻、Cooldown、使用者體重）若超出有效範圍，系統會忽略該欄位並保留原值。
+
+---
+
+## 安全設定
+
+### AP 熱點密碼
+
+| 項目 | 說明 |
+|------|------|
+| 預設值 | `12345678` |
+| 長度限制 | **8–63 字元**（WPA2 PSK 標準） |
+| 修改方式 | 設定頁「安全設定」區塊 → AP 密碼欄位 → 儲存重啟 |
+| 顯示位置 | 開機時印於 Serial（`[Portal] AP started — ... Password: XXXXXXXX`） |
+
+**注意**：預設密碼 `12345678` 為公開資訊，建議首次設定後立即更改。  
+AP 密碼欄位採「留空不變更」設計，若需重置可長按 GPIO0 3 秒（見下方）。
+
+### 管理員密碼（Web UI 認證）
+
+| 項目 | 說明 |
+|------|------|
+| 預設值 | 空值（停用認證，所有路由開放） |
+| 長度限制 | **8 字元以上**（若設定） |
+| 帳號 | `admin`（固定） |
+| 修改方式 | 設定頁「安全設定」區塊 → 管理員密碼欄位 → 儲存重啟 |
+| 停用方式 | 勾選「清除管理密碼（停用 Web 認證）」→ 儲存 |
+
+設定管理員密碼後，所有 Web 路由（設定頁、儀表板、API）均需透過 HTTP Basic Auth 驗證。  
+瀏覽器會自動彈出登入對話框，輸入帳號 `admin` 與設定的密碼。
+
+**忘記管理員密碼**：長按 GPIO0 3 秒觸發硬體重置，裝置重啟後管理密碼清空（停用認證）。
+
+### 硬體重置（GPIO0 長按）
+
+長按 **BOOT 鍵（GPIO0）** 超過 3 秒後**放開**（必須放開才會重啟；持續按住會使 ESP32 進入 bootloader download 模式），裝置將清空以下設定並重啟進入 AP 模式：
+
+| 清空項目 | 重置值 |
+|---------|--------|
+| WiFi SSID | 空（強制進入 AP 模式） |
+| WiFi 密碼 | 空 |
+| AP 熱點密碼 | `12345678`（恢復預設） |
+| 管理員密碼 | 空（停用 Web 認證） |
+
+> 其他設定（LINE Token、使用者資料、事件日誌）**不受影響**。
+
+### TLS 根 CA 憑證
+
+裝置與 `api.line.me`（LINE）及 `api.openweathermap.org`（OWM）的 HTTPS 通訊，均使用 `setCACert()` 進行伺服器憑證驗證，根 CA PEM 儲存於 `include/RootCerts.h`。
+
+**驗證根 CA 是否仍符合實際伺服器**（在可連網的電腦上執行）：
+
+```bash
+# 顯示完整憑證鏈（depth 0 = leaf, depth 1 = intermediate, depth 2 = root CA）
+openssl s_client -connect api.line.me:443 -servername api.line.me 2>/dev/null | head -30
+
+# 取出鏈中最後一張憑證（root CA）並顯示 SHA-1 指紋
+openssl s_client -connect api.line.me:443 -servername api.line.me -showcerts 2>/dev/null \
+  | awk 'BEGIN{c=""} /-----BEGIN CERTIFICATE-----/{c=""} {c=c"\n"$0} /-----END CERTIFICATE-----/{last=c} END{print last}' \
+  | openssl x509 -noout -fingerprint -sha1
+
+# OWM 同樣方式
+openssl s_client -connect api.openweathermap.org:443 -servername api.openweathermap.org -showcerts 2>/dev/null \
+  | awk 'BEGIN{c=""} /-----BEGIN CERTIFICATE-----/{c=""} {c=c"\n"$0} /-----END CERTIFICATE-----/{last=c} END{print last}' \
+  | openssl x509 -noout -fingerprint -sha1
+```
+
+> **注意**：`openssl s_client ... | openssl x509 -fingerprint` 只顯示第一張憑證（leaf cert）指紋，不是 root CA。上方 `awk` 指令會自動取得鏈中最後一張憑證（root CA）。
+
+若 SHA-1 指紋不符合 `RootCerts.h` 中的註解值，表示服務商已更換憑證鏈，需更新 `RootCerts.h` 並重新燒錄。
+
+**Serial 錯誤代碼對照**：
+
+| 錯誤碼 | 含義 | 可能原因 |
+|--------|------|---------|
+| `-9984` | X509 憑證驗證失敗 | 根 CA 不符或已過期 |
+| `-15074` | ASN1 解析錯誤 | PEM 格式損毀或非 DER 編碼 |
+
+詳細說明請參閱 [docs/security.md](security.md)。

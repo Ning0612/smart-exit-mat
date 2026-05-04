@@ -66,7 +66,7 @@ smart-exit-mat/
 │   ├── WeatherManager.h      OpenWeatherMap 天氣查詢
 │   ├── EventLogger.h         LittleFS JSONL 事件持久化
 │   └── ConfigPortal.h        Web 設定頁 + Dashboard + REST API
-├── docs/                     詳細文件
+├── docs/                     詳細文件（含 security.md 資安防護說明）
 ├── platformio.ini            PlatformIO 專案設定
 ├── partitions.csv            自訂 Flash 分區表
 ├── CLAUDE.md                 Claude Code 開發指引

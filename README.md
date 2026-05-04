@@ -26,7 +26,7 @@
 - 事件日誌：JSONL 格式按月儲存於 LittleFS，自動清理 6 個月前舊檔
 - Web 儀表板：即時狀態、日/週/月報表圖表、12 小時事件時間軸
 - 雙 WiFi 模式：STA 常態運作 / AP 初始設定
-- 硬體重置：長按 BOOT 鍵（GPIO0）3 秒清空 WiFi，重新進入 AP 模式
+- 硬體重置：長按 BOOT 鍵（GPIO0）3 秒後**放開**，清空 WiFi 憑證並重置 AP 密碼與管理密碼，重新進入 AP 模式
 
 ---
 
@@ -51,9 +51,10 @@ pio device monitor        # 確認啟動正常（115200 baud）
 
 ### 第三步：初始設定
 
-1. 連接 WiFi：**`SmartExitMat-Setup`**（無密碼）
+1. 連接 WiFi：**`SmartExitMat-Setup`**，WPA2 密碼：**`12345678`**（預設值，開機時顯示於 Serial）
 2. 開啟瀏覽器：`http://192.168.4.1`
-3. 填入 WiFi、LINE Token、使用者體重，儲存重啟
+3. **先在「安全設定」區塊修改 AP 密碼與管理員密碼**（建議在填入 LINE Token 等敏感資訊前完成）
+4. 填入 WiFi、LINE Token、使用者體重，儲存重啟
 
 → 詳見 [docs/configuration.md](docs/configuration.md)
 
@@ -77,6 +78,7 @@ pio device monitor        # 確認啟動正常（115200 baud）
 | [docs/api.md](docs/api.md) | 完整 REST API 參考（路由、請求、回應格式） |
 | [docs/calibration.md](docs/calibration.md) | 秤校正原理、API 自動校正、手動計算方法 |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | 常見問題診斷與解決方法 |
+| [docs/security.md](docs/security.md) | 資安防護說明（密碼管理、TLS 憑證驗證、CSRF 防護） |
 
 ---
 

@@ -160,18 +160,29 @@ atHome=true  → 踩踏 → atHome=false → LINE 通知「出門了」
 
 ---
 
-## 硬體重置（清空 WiFi）
+## 硬體重置（清空 WiFi 與密碼）
 
-當 WiFi 設定錯誤、忘記 IP 或網路環境改變時，可透過硬體方式強制進入 AP 設定模式：
+當 WiFi 設定錯誤、忘記管理員密碼或網路環境改變時，可透過硬體方式強制進入 AP 設定模式：
 
 ### 操作步驟
 
 1. 長按 **BOOT 鍵（GPIO0）**，持續超過 3 秒
-2. Serial 顯示提示：`[Runtime] GPIO0 long press — release button to clear WiFi and enter AP mode`
-3. **放開按鍵**（重要：必須放開後才重啟，以確保 GPIO0 回到 HIGH，避免進入 bootloader download 模式）
-4. 裝置重啟，清空 WiFi SSID 和密碼，進入 AP 熱點模式
+2. Serial 顯示提示（依觸發時機不同）：
+   - 正常運作期間：`[Runtime] GPIO0 long press — release button to reset WiFi + passwords and enter AP mode`
+   - WiFi 連線等待期間：`[Boot] GPIO0 long press — release button to reset WiFi + passwords`
+3. **放開按鍵**（重要：必須放開後才重啟；若持續按住，GPIO0 維持 LOW，ESP32 重啟後會進入 bootloader download 模式而非正常開機）
+4. 裝置重啟，進入 AP 熱點模式
 
-> 此操作**只清空 WiFi 憑證**，其他設定（LINE Token、使用者、狀態、事件日誌）均保留不受影響。
+### 重置範圍
+
+| 清空項目 | 重置值 |
+|---------|--------|
+| WiFi SSID | 空（強制進入 AP 模式） |
+| WiFi 密碼 | 空 |
+| AP 熱點密碼 | `12345678`（恢復預設） |
+| 管理員密碼 | 空（停用 Web 認證） |
+
+> LINE Token、使用者資料、狀態、事件日誌**均保留不受影響**。
 
 ### 在 WiFi 連線等待期間也可觸發
 
