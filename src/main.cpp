@@ -33,13 +33,15 @@ EventLogger    g_eventLogger;
 
 bool g_configMode = false;
 
-// 清空 WiFi 憑證後重啟，讓下次開機因 SSID 為空而自動進入 AP 模式
+// 清空 WiFi 憑證、AP 密碼、管理密碼後重啟，讓下次開機因 SSID 為空而自動進入 AP 模式
 // 呼叫前須確保 GPIO0 已放開，避免 bootloader strapping pin 進入 download mode
 void clearWifiAndRestart() {
   g_cfg.wifiSsid = "";
   g_cfg.wifiPassword = "";
+  g_cfg.apPassword    = "12345678";
+  g_cfg.adminPassword = "";
   g_configMgr.saveConfig(g_cfg);
-  Serial.println("[Config] WiFi credentials cleared — restarting into AP mode...");
+  Serial.println("[Config] WiFi + passwords reset — restarting into AP mode...");
   delay(100);
   ESP.restart();
 }
@@ -75,7 +77,7 @@ void setup() {
         if (gpio0HoldStart == 0) gpio0HoldStart = millis();
         if (millis() - gpio0HoldStart >= FORCE_CONFIG_HOLD_MS) {
           Serial.println();
-          Serial.println("[Boot] GPIO0 long press — release button to clear WiFi");
+          Serial.println("[Boot] GPIO0 long press — release button to reset WiFi + passwords");
           WiFi.disconnect(true);
           while (digitalRead(FORCE_CONFIG_PIN) == LOW) delay(10);
           delay(100);
@@ -95,13 +97,14 @@ void setup() {
       g_portal.setEventLogger(g_eventLogger);
       g_portal.setTimeManager(g_timeMgr);
       g_portal.setScaleManager(g_scale);
+      // NTP 必須在 LINE 通知之前完成，因為 setCACert() TLS 驗證依賴正確系統時間
+      g_timeMgr.begin(g_cfg.timezone, g_cfg.ntpServer);
       if (!g_cfg.lineChannelAccessToken.isEmpty() && !g_cfg.lineToId.isEmpty()) {
         String msg = "智慧地墊已上線\n"
                      "區網設定頁：http://" + WiFi.localIP().toString() + "\n"
                      "（需與地墊在同一 WiFi 下）";
         g_lineNotifier.sendText(g_cfg.lineChannelAccessToken, g_cfg.lineToId, msg);
       }
-      g_timeMgr.begin(g_cfg.timezone, g_cfg.ntpServer);
       g_eventLogger.pruneOldFiles(6);  // runs after NTP so time() is valid
       g_weather.updateIfNeeded(g_cfg.owmApiKey, g_cfg.owmCity);
     } else {
@@ -122,14 +125,14 @@ void setup() {
 void loop() {
   g_portal.handleClient();
 
-  // GPIO0 長按偵測：偵測到 3 秒後提示放開，放開後清空 WiFi 憑證並重啟
+  // GPIO0 長按偵測：偵測到 3 秒後提示放開，放開後清空 WiFi 憑證與密碼並重啟
   // 等待放開才重啟，確保 bootloader 不會因 GPIO0 LOW 進入 download mode
   if (!g_configMode) {
     static unsigned long s_gpio0PressMs = 0;
     if (digitalRead(FORCE_CONFIG_PIN) == LOW) {
       if (s_gpio0PressMs == 0) s_gpio0PressMs = millis();
       if (millis() - s_gpio0PressMs >= FORCE_CONFIG_HOLD_MS) {
-        Serial.println("[Runtime] GPIO0 long press — release button to clear WiFi and enter AP mode");
+        Serial.println("[Runtime] GPIO0 long press — release button to reset WiFi + passwords and enter AP mode");
         while (digitalRead(FORCE_CONFIG_PIN) == LOW) delay(10);
         delay(100);
         clearWifiAndRestart();

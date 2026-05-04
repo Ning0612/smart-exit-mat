@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+#include "RootCerts.h"
 
 class LineNotifier {
 public:
@@ -27,11 +28,11 @@ public:
 private:
   bool _pushText(const String& token, const String& toId, const String& text) {
     WiFiClientSecure client;
-    client.setInsecure();
+    client.setCACert(LINE_ROOT_CA);
 
     HTTPClient https;
     if (!https.begin(client, "https://api.line.me/v2/bot/message/push")) {
-      Serial.println("[LINE] begin() failed");
+      Serial.println("[LINE] begin() failed — check TLS cert or network");
       return false;
     }
 

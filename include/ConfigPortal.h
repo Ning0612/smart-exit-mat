@@ -23,6 +23,7 @@ class ConfigPortal {
   EventLogger*    _eventLogger = nullptr;
   TimeManager*    _timeMgr     = nullptr;
   ScaleManager*   _scale       = nullptr;
+  String          _csrfToken;
 
 public:
   void begin(AppConfig& cfg, UserProfile* users, int& userCount, ConfigManager& cfgMgr) {
@@ -37,10 +38,12 @@ public:
     delay(100);
     WiFi.mode(WIFI_AP_STA);
     WiFi.softAPConfig(apIP, apIP, subnet);
-    uint8_t mac[6];
-    WiFi.macAddress(mac);
-    char apPass[9];
-    snprintf(apPass, sizeof(apPass), "%02X%02X%02X%02X", mac[2], mac[3], mac[4], mac[5]);
+
+    // 使用設定中的 AP 密碼（預設 12345678，可透過設定頁修改）
+    // WPA2 PSK 限制：8~63 字元；不符則回退預設值
+    if (cfg.apPassword.length() < 8 || cfg.apPassword.length() > 63)
+      cfg.apPassword = "12345678";
+    const char* apPass = cfg.apPassword.c_str();
     bool apOk = WiFi.softAP("SmartExitMat-Setup", apPass);
     delay(200);
 
@@ -55,6 +58,7 @@ public:
     _dns->start(53, "*", apIP);
 
     _server = new WebServer(80);
+    _refreshToken();
     _attachRoutes(true);
 
     Serial.println("[Portal] HTTP server started");
@@ -68,6 +72,7 @@ public:
     _cfgMgr    = &cfgMgr;
 
     _server = new WebServer(80);
+    _refreshToken();
     _attachRoutes(false);
 
     Serial.printf("[Portal] HTTP server started (STA) on http://%s\n",
@@ -101,6 +106,36 @@ private:
     _server->onNotFound(               [this]() { _handleRoot(); });
     _server->begin();
   }
+
+  // ── 認證與安全 ────────────────────────────────────────────────────────────
+
+  // HTTP Basic Auth；adminPassword 為空時直接放行（首次設定）
+  bool _checkAuth() {
+    if (!_cfg || _cfg->adminPassword.isEmpty()) return true;
+    if (_server->authenticate("admin", _cfg->adminPassword.c_str())) return true;
+    _server->requestAuthentication(BASIC_AUTH, "SmartExitMat");
+    return false;
+  }
+
+  // CSRF nonce 驗證（僅用於 POST /save）
+  bool _checkCsrf() {
+    if (!_server->hasArg("_csrf") || _server->arg("_csrf") != _csrfToken) {
+      _server->send(403, "text/plain; charset=utf-8", "CSRF token mismatch");
+      return false;
+    }
+    return true;
+  }
+
+  // 以 esp_random() 產生 16 位元十六進位隨機 nonce
+  void _refreshToken() {
+    char buf[17];
+    for (int i = 0; i < 16; i++)
+      buf[i] = "0123456789abcdef"[esp_random() % 16];
+    buf[16] = '\0';
+    _csrfToken = String(buf);
+  }
+
+  // ── 工具函式 ─────────────────────────────────────────────────────────────
 
   String _escapeHtml(const String& s) {
     String out;
@@ -136,6 +171,8 @@ private:
     return out;
   }
 
+  // ── 路由處理 ─────────────────────────────────────────────────────────────
+
   void _handleScan() {
     if (millis() - _lastScanMs < SCAN_COOLDOWN_MS) {
       _server->send(200, "application/json", "[]");
@@ -170,6 +207,8 @@ private:
   }
 
   void _handleRoot() {
+    if (!_checkAuth()) return;
+
     String currentSsid = _escapeHtml(_cfg->wifiSsid);
 
     // Build user cards
@@ -225,12 +264,14 @@ private:
       ".add-btn{margin-top:8px;padding:8px 16px;background:#ff9800;color:#fff;"
         "border:none;border-radius:4px;cursor:pointer;font-size:.9em}\n"
       ".add-btn:hover{background:#e65100}\n"
+      ".hint{font-size:.8em;color:#888;margin-top:4px}\n"
       "</style></head><body>\n"
       "<h1>SmartExitMat Setup</h1>\n"
       "<a href=\"/dashboard\" style=\"display:inline-block;margin-bottom:12px;"
         "padding:8px 16px;background:#7c4dff;color:#fff;border-radius:4px;"
         "text-decoration:none;font-size:.9em\">Dashboard &#x5100;&#x8868;&#x677F;</a>\n"
       "<form method=\"POST\" action=\"/save\">\n"
+      "<input type=\"hidden\" name=\"_csrf\" value=\"" + _csrfToken + "\">\n"
 
       // ── Wi-Fi ──
       "<div class=\"section\"><h2>Wi-Fi</h2>\n"
@@ -279,6 +320,20 @@ private:
       "<div class=\"section\"><h2>時間</h2>\n"
       "<label>Timezone (POSIX)<input type=\"text\" name=\"tz\" value=\"" + _escapeHtml(_cfg->timezone) + "\"></label>\n"
       "<label>NTP Server<input type=\"text\" name=\"ntp\" value=\"" + _escapeHtml(_cfg->ntpServer) + "\"></label>\n"
+      "</div>\n"
+
+      // ── 安全設定 ──
+      "<div class=\"section\"><h2>安全設定</h2>\n"
+      "<p class=\"hint\">AP 熱點密碼：裝置進入 AP 模式時的 Wi-Fi 密碼，WPA2 最少 8 碼</p>\n"
+      "<label>AP 密碼<input type=\"password\" name=\"ap_pass\" minlength=\"8\" placeholder=\""
+        + (_cfg->apPassword.isEmpty() ? "尚未設定" : "已設定（留空不變更）")
+        + "\" autocomplete=\"new-password\"></label>\n"
+      "<p class=\"hint\" style=\"margin-top:12px\">管理員密碼：設定後存取 Web 介面需輸入密碼（帳號固定為 admin），留空停用認證，最少 8 碼</p>\n"
+      "<label>管理員密碼<input type=\"password\" name=\"admin_pass\" minlength=\"8\" placeholder=\""
+        + (_cfg->adminPassword.isEmpty() ? "尚未設定（認證已停用）" : "已設定（留空不變更）")
+        + "\" autocomplete=\"new-password\"></label>\n"
+      "<label style=\"margin-top:4px;font-size:.85em;color:#888\">"
+        "<input type=\"checkbox\" name=\"admin_pass_clear\" value=\"1\"> 清除管理密碼（停用 Web 認證）</label>\n"
       "</div>\n"
 
       // ── 使用者（動態） ──
@@ -391,6 +446,8 @@ private:
   }
 
   void _handleDashboard() {
+    if (!_checkAuth()) return;
+
     static const char DASHBOARD_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -667,6 +724,8 @@ setInterval(ls,30000);
   }
 
   void _handleApiStatus() {
+    if (!_checkAuth()) return;
+
     String json = "{\"weather\":{";
     if (_weather && _weather->hasData()) {
       char tbuf[10];
@@ -704,6 +763,7 @@ setInterval(ls,30000);
   }
 
   void _handleApiEvents() {
+    if (!_checkAuth()) return;
     if (!_eventLogger) {
       _server->send(503, "application/json", "{\"error\":\"logger not ready\"}");
       return;
@@ -731,6 +791,7 @@ setInterval(ls,30000);
   }
 
   void _handleApiEventsStatus() {
+    if (!_checkAuth()) return;
     if (!_eventLogger) {
       _server->send(503, "application/json", "{\"error\":\"logger not ready\"}");
       return;
@@ -779,6 +840,7 @@ setInterval(ls,30000);
   }
 
   void _handleApiCalibrate() {
+    if (!_checkAuth()) return;
     if (!_scale) {
       _server->send(503, "application/json", "{\"ok\":false,\"error\":\"scale not initialized\"}");
       return;
@@ -815,6 +877,31 @@ setInterval(ls,30000);
   }
 
   void _handleSave() {
+    if (!_checkAuth()) return;
+    if (!_checkCsrf()) return;
+
+    // ── 密碼欄位長度驗證（伺服器端，最少 8 碼）────────────────────────────
+    if (_server->hasArg("ap_pass") && !_server->arg("ap_pass").isEmpty()) {
+      unsigned int apLen = _server->arg("ap_pass").length();
+      if (apLen < 8 || apLen > 63) {
+        _server->send(400, "text/html; charset=utf-8",
+          "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"></head><body>"
+          "<h2>&#x932F;&#x8AA4;&#xFF1A;AP &#x5BC6;&#x78BC;&#x9700;&#x70BA; 8&#x20131;63 &#x78BC;</h2>"
+          "<button onclick=\"history.back()\">&#x8FD4;&#x56DE;</button></body></html>");
+        return;
+      }
+    }
+    if (!_server->hasArg("admin_pass_clear") &&
+        _server->hasArg("admin_pass") && !_server->arg("admin_pass").isEmpty()) {
+      if (_server->arg("admin_pass").length() < 8) {
+        _server->send(400, "text/html; charset=utf-8",
+          "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"></head><body>"
+          "<h2>&#x932F;&#x8AA4;&#xFF1A;&#x7BA1;&#x7406;&#x5494;&#x78BC;&#x4E0D;&#x5F97;&#x5C11;&#x65BC; 8 &#x78BC;</h2>"
+          "<button onclick=\"history.back()\">&#x8FD4;&#x56DE;</button></body></html>");
+        return;
+      }
+    }
+
     if (_server->hasArg("wifi_ssid"))    _cfg->wifiSsid = _server->arg("wifi_ssid");
     // 機密欄位：留空不變更；勾選 clear checkbox 才清除
     if (_server->hasArg("wifi_pass_clear")) {
@@ -836,6 +923,16 @@ setInterval(ls,30000);
       _cfg->owmApiKey = "";
     } else if (_server->hasArg("owm_key") && !_server->arg("owm_key").isEmpty()) {
       _cfg->owmApiKey = _server->arg("owm_key");
+    }
+    // AP 密碼：留空不變更，已通過長度驗證
+    if (_server->hasArg("ap_pass") && !_server->arg("ap_pass").isEmpty()) {
+      _cfg->apPassword = _server->arg("ap_pass");
+    }
+    // 管理員密碼：clear 清空（停用認證），非空且已通過長度驗證才更新
+    if (_server->hasArg("admin_pass_clear")) {
+      _cfg->adminPassword = "";
+    } else if (_server->hasArg("admin_pass") && !_server->arg("admin_pass").isEmpty()) {
+      _cfg->adminPassword = _server->arg("admin_pass");
     }
     // 非機密欄位直接更新，加長度限制
     if (_server->hasArg("tz")) {

@@ -16,6 +16,8 @@ public:
     cfg.ntpServer              = p.getString("ntp",        "time.google.com");
     cfg.owmApiKey              = p.getString("owm_key",   "");
     cfg.owmCity                = p.getString("owm_city",  "Taipei");
+    cfg.apPassword             = p.getString("ap_pass",    "12345678");
+    cfg.adminPassword          = p.getString("admin_pass", "");
     cfg.calibrationFactor      = p.getFloat ("cal_factor", 2280.0f);
     cfg.stepOnThresholdKg      = p.getFloat ("step_on",    10.0f);
     cfg.stepOffThresholdKg     = p.getFloat ("step_off",    3.0f);
@@ -51,8 +53,10 @@ public:
     p.putString("wifi_pass",  cfg.wifiPassword);
     p.putString("line_token", cfg.lineChannelAccessToken);
     p.putString("line_to",    cfg.lineToId);
-    p.putString("owm_key",   cfg.owmApiKey);
-    p.putString("owm_city",  cfg.owmCity);
+    p.putString("owm_key",    cfg.owmApiKey);
+    p.putString("owm_city",   cfg.owmCity);
+    p.putString("ap_pass",    cfg.apPassword);
+    p.putString("admin_pass", cfg.adminPassword);
     p.putString("tz",         cfg.timezone);
     p.putString("ntp",        cfg.ntpServer);
     p.putFloat ("cal_factor", cfg.calibrationFactor);

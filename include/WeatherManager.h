@@ -4,6 +4,7 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include "RootCerts.h"
 
 class WeatherManager {
   String        _advisory;
@@ -158,7 +159,7 @@ private:
 
   String _httpGet(const String& url) {
     WiFiClientSecure client;
-    client.setInsecure();
+    client.setCACert(OWM_ROOT_CA);
     HTTPClient https;
     if (!https.begin(client, url)) return "";
     int    code = https.GET();

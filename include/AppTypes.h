@@ -27,6 +27,8 @@ struct AppConfig {
   String ntpServer;
   String owmApiKey;
   String owmCity             = "Taipei";
+  String apPassword          = "12345678";  // AP 熱點密碼，WPA2 最少 8 碼
+  String adminPassword;                     // Web UI 管理密碼，空值 = 停用認證
   float  calibrationFactor  = 28853.34f;
   float  stepOnThresholdKg  = 10.0f;
   float  stepOffThresholdKg =  3.0f;
