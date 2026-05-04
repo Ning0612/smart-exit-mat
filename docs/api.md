@@ -31,6 +31,7 @@ Base URL：`http://<裝置IP>`
 - 使用者在家狀態卡片
 - 事件報表（日 / 週 / 月，含圖表）
 - 過去 12 小時狀態時間軸（甘特圖式）
+- 清除所有事件紀錄（需輸入管理員密碼確認）
 
 ---
 
@@ -192,6 +193,59 @@ GET /api/events?view=month&year=2025&month=5
 
 ---
 
+### `GET /api/csrf`
+
+取得 CSRF nonce token，供 `POST /api/events/clear` 使用。
+
+**認證**：需要 HTTP Basic Auth（與其他 API 一致）。
+
+**回應**：
+
+```json
+{ "token": "a1b2c3d4e5f6a7b8" }
+```
+
+Token 為 per-boot 16 碼十六進位字串，裝置重啟後更換。
+
+---
+
+### `POST /api/events/clear`
+
+**永久刪除** LittleFS 中 `/events/` 目錄下所有事件日誌檔案（`YYYY-MM.jsonl` 格式）。此操作不可復原。
+
+**認證**：需要 HTTP Basic Auth。
+
+**Content-Type**：`application/x-www-form-urlencoded`（或 `multipart/form-data`）
+
+**欄位**：
+
+| 欄位 | 必填 | 說明 |
+|------|------|------|
+| `_csrf` | 是 | 從 `GET /api/csrf` 取得的 token |
+| `password` | 條件必填 | 管理員密碼；`adminPassword` 已設定時必填，未設定時可省略 |
+
+**成功回應（HTTP 200）**：
+
+```json
+{ "ok": true }
+```
+
+**失敗回應**：
+
+| HTTP 狀態碼 | 說明 | 回應範例 |
+|------------|------|---------|
+| 403 | CSRF token 不符 | `{"ok":false,"error":"CSRF token mismatch"}` |
+| 403 | 管理員密碼錯誤 | `{"ok":false,"error":"密碼錯誤"}` |
+| 429 | 密碼嘗試過多（5 次失敗後觸發 30s 冷卻） | `{"ok":false,"error":"too many attempts, wait 30s"}` |
+| 503 | EventLogger 未就緒 | `{"ok":false,"error":"logger not ready"}` |
+
+**注意事項**：
+- 密碼比對失敗超過 **5 次**後，進入 30 秒冷卻期，期間所有嘗試均回傳 429
+- 冷卻計數於裝置重啟後重置
+- 只刪除符合 `YYYY-MM.jsonl` 命名格式的檔案；目錄結構與其他自訂檔案不受影響
+
+---
+
 ### `GET /api/calibrate?w=<kg>`
 
 利用目前 HX711 讀值自動計算校正係數。
@@ -304,6 +358,9 @@ GET /api/calibrate?w=72.5
 |------------|------|
 | 200 | 成功 |
 | 400 | 缺少必要參數或參數值無效 |
+| 401 | 需要 HTTP Basic Auth（`adminPassword` 已設定，但未提供或不符） |
+| 403 | CSRF token 不符，或密碼錯誤 |
+| 429 | 請求頻率過高（`POST /api/events/clear` 密碼嘗試超限） |
 | 503 | 依賴的子系統未就緒（如 EventLogger 未初始化、ScaleManager 未就緒） |
 
 所有 API 在裝置未連接 WiFi（AP 模式）時仍可存取（透過 AP IP `192.168.4.1`）。

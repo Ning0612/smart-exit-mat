@@ -16,7 +16,9 @@
 | JSON 控制字元 | `< 0x20` 輸出 `\u%04x`，防格式異常 |
 | TLS 憑證驗證 | `LineNotifier` 與 `WeatherManager` 使用 `setCACert()`，根 CA 定義於 `RootCerts.h` |
 | Web UI 認證 | HTTP Basic Auth（帳號 `admin`），由 `AppConfig.adminPassword` 控制；空值停用認證（首次設定用） |
-| CSRF 防護 | `POST /save` 使用 `esp_random()` 產生 per-boot 16 碼 nonce，嵌入表單並驗證 |
+| CSRF 防護 | `POST /save` 與 `POST /api/events/clear` 均驗證 per-boot 16 碼 nonce |
+| 清除事件日誌雙重驗證 | `POST /api/events/clear` 需 HTTP Basic Auth + CSRF token + 管理員密碼明確輸入 |
+| 暴力破解防護 | `POST /api/events/clear` 密碼嘗試：5 次失敗後觸發 30s 冷卻（429 Too Many Requests） |
 
 ---
 
@@ -88,6 +90,8 @@ openssl s_client -connect api.openweathermap.org:443 -servername api.openweather
 | `GET /api/status` | 需認證 |
 | `GET /api/events` | 需認證 |
 | `GET /api/events/status` | 需認證 |
+| `GET /api/csrf` | 需認證（取得 CSRF token） |
+| `POST /api/events/clear` | 需認證 + CSRF + 管理員密碼（三重驗證） |
 | `GET /api/calibrate` | 需認證 |
 | `POST /save` | 需認證 + CSRF |
 | `GET /scan` | 開放（AP 模式掃描需用） |
@@ -96,15 +100,39 @@ openssl s_client -connect api.openweathermap.org:443 -servername api.openweather
 
 ### CSRF 防護
 
-`POST /save` 採用 nonce 機制防止跨站請求偽造。
+`POST /save` 與 `POST /api/events/clear` 均採用 nonce 機制防止跨站請求偽造。
 
 **實作**：
 - `ConfigPortal::begin()` / `beginSTA()` 時以 `esp_random()` 產生 16 碼十六進位 token
-- Token 嵌入設定頁 HTML form 作為隱藏欄位 `<input type="hidden" name="_csrf">`
-- `_handleSave()` 驗證 `_csrf` 參數是否與伺服器端 token 相符，不符回傳 403
-- Token 為 per-boot 固定值；因 `/save` 必然觸發重啟，實際上每次儲存操作都使用新 token
+- `POST /save`：Token 嵌入設定頁 HTML form 作為隱藏欄位 `<input type="hidden" name="_csrf">`
+- `POST /api/events/clear`：客戶端先呼叫 `GET /api/csrf` 取得 token，再隨 POST body 送出
+- 兩者均呼叫 `_checkCsrf()`，不符則回傳 403
+- Token 為 per-boot 固定值；`/save` 必然觸發重啟，故每次儲存操作都使用新 token
+
+**`GET /api/csrf` 的存取控制**：此端點同樣需要 HTTP Basic Auth，確保只有已認證的使用者才能取得 token，維護 CSRF 防護的完整性。
 
 **與 Basic Auth 的關係**：若已設定 `adminPassword`，HTTP Basic Auth 本身已提供隱含 CSRF 保護（跨域請求不自動攜帶 Authorization header）；CSRF nonce 為額外防禦層。
+
+---
+
+### 事件日誌清除防護
+
+`POST /api/events/clear` 為破壞性操作，採三重驗證：
+
+1. **HTTP Basic Auth**：確認使用者身分（與其他受保護路由一致）
+2. **CSRF token**：防止跨站請求偽造
+3. **管理員密碼明確輸入**：需在 Dashboard Modal 中再次輸入密碼確認（`adminPassword` 為空時跳過）
+
+**暴力破解防護**：
+
+- 密碼嘗試失敗累計達 **5 次**後，觸發 30 秒冷卻期
+- 冷卻期間所有嘗試均回傳 `HTTP 429`，不消耗配額
+- 失敗計數於裝置重啟後重置
+- 密碼欄位長度限制 128 字元，防止超大輸入造成記憶體壓力
+
+**已知限制**：
+- 裝置使用 HTTP（非 HTTPS），密碼與 token 以明文在網路上傳輸；在家用 WPA2 WiFi 環境下風險可接受，不建議在公共/共享網路中使用
+- 冷卻計數儲存於 RAM，重啟後歸零（但 CSRF token 也會更換）
 
 ---
 
