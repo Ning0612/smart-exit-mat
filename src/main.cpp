@@ -223,7 +223,12 @@ void loop() {
         matched->name.c_str(), eventType.c_str(),
         timestamp.c_str(), eventWeight);
 
-      String advisory = (eventType == "出門了") ? g_weather.advisory() : "";
+      String advisory = "";
+      if (eventType == "出門了") {
+        advisory = g_weather.advisory();
+        if (advisory.isEmpty() && !g_cfg.owmApiKey.isEmpty())
+          advisory = "天氣資訊暫時無法取得，請自行確認";
+      }
       g_lineNotifier.send(
         g_cfg.lineChannelAccessToken,
         g_cfg.lineToId,
