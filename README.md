@@ -110,6 +110,10 @@ TimeManager ──── NTP 校時（time.google.com）
 
 ---
 
+## Demo 片段
+
+- [smart-exit-mat 實際動作 demo](docs/demo/line-demo.mp4)
+
 ## 授權
 
-本專案僅供個人學習與實驗使用。
+本公開版本採 MIT License，詳見 [LICENSE](LICENSE)。
