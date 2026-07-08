@@ -10,6 +10,7 @@
 ![LINE Bot](https://img.shields.io/badge/Notify-LINE%20Bot-brightgreen?logo=line)
 ![OpenWeatherMap](https://img.shields.io/badge/Weather-OpenWeatherMap-orange)
 ![HX711](https://img.shields.io/badge/Sensor-HX711%20%2B%20Load%20Cell-red)
+[![CI](https://github.com/Ning0612/smart-exit-mat/actions/workflows/ci.yml/badge.svg)](https://github.com/Ning0612/smart-exit-mat/actions/workflows/ci.yml)
 
 利用踩踏地墊時的重量變化，自動判斷家庭成員出門或回家，並透過 **LINE Bot** 發送即時通知。出門時附上即時天氣建議，所有事件持久化至 LittleFS，提供 **Web 儀表板**查閱歷史記錄。
 
