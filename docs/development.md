@@ -308,6 +308,17 @@ g_portal.setEventLogger(g_eventLogger);
 
 ## 常用開發指令
 
+### CI
+
+GitHub Actions 會在 push、pull request 與手動 workflow dispatch 時執行
+`.github/workflows/ci.yml`：
+
+- 安裝 PlatformIO
+- 執行 `pio run -e nodemcu-32s`
+
+CI 只驗證韌體可建置，不會燒錄裝置、連接 HX711、呼叫 LINE Bot 或
+OpenWeatherMap，也不會執行實體踩踏測試。
+
 ```bash
 # 僅編譯（驗證語法）
 pio run
