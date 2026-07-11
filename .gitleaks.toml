@@ -1,5 +1,8 @@
 title = "smart-exit-mat gitleaks configuration"
 
+[extend]
+useDefault = true
+
 [[allowlists]]
 description = "Historical documented CSRF nonce example; not an external credential"
 regexTarget = "match"
