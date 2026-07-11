@@ -202,7 +202,7 @@ GET /api/events?view=month&year=2025&month=5
 **回應**：
 
 ```json
-{ "token": "a1b2c3d4e5f6a7b8" }
+{ "token": "<16-hex-csrf-token>" }
 ```
 
 Token 為 per-boot 16 碼十六進位字串，裝置重啟後更換。
